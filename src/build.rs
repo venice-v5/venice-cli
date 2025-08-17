@@ -1,6 +1,5 @@
 use std::{
     ffi::{OsStr, OsString},
-    io::{Read, Write},
     path::{Path, PathBuf},
     process::Stdio,
     time::SystemTime,
@@ -8,18 +7,67 @@ use std::{
 
 use crate::errors::CliError;
 
+pub const SRC_EXT: &str = "py";
+pub const BUILD_EXT: &str = "mpy";
+
+pub const PACKAGE_INIT_NAME: &[u8] = b"__init__";
+pub const PYTHON_MOD_SEP: u8 = b'.';
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct SrcModule {
     name: OsString,
 }
 
 impl SrcModule {
+    fn from_path(path: &Path, src_dir: &Path) -> Self {
+        let dir_stripped = path.strip_prefix(src_dir).unwrap();
+        let ext_stripped = dir_stripped
+            .with_file_name(dir_stripped.file_stem().unwrap())
+            .into_os_string();
+
+        Self { name: ext_stripped }
+    }
+
+    pub fn python_name(&self, package_name: &[u8]) -> Vec<u8> {
+        let mut python_name = Vec::new();
+        python_name.extend_from_slice(package_name);
+
+        let mut name_bytes = self.name.as_encoded_bytes();
+        python_name.push(b'.');
+
+        if name_bytes.ends_with(PACKAGE_INIT_NAME) {
+            name_bytes = &name_bytes[..name_bytes.len() - PACKAGE_INIT_NAME.len()];
+        }
+
+        python_name.extend_from_slice(name_bytes);
+
+        for c in python_name.iter_mut() {
+            if *c as char == std::path::MAIN_SEPARATOR {
+                *c = b'.';
+            }
+        }
+
+        if python_name.ends_with(&[PYTHON_MOD_SEP]) {
+            python_name.pop();
+        }
+
+        python_name
+    }
+
+    pub fn module_flags(&self) -> u8 {
+        0b01 | if self.name.as_encoded_bytes().ends_with(PACKAGE_INIT_NAME) {
+            0b10
+        } else {
+            0b00
+        }
+    }
+
     pub fn src_path(&self, src_dir: &Path) -> PathBuf {
-        src_dir.join(&self.name).with_extension("py")
+        src_dir.join(&self.name).with_extension(SRC_EXT)
     }
 
     pub fn build_path(&self, build_dir: &Path) -> PathBuf {
-        build_dir.join(&self.name).with_extension("mpy")
+        build_dir.join(&self.name).with_extension(BUILD_EXT)
     }
 
     pub fn needs_rebuild(&self, src_dir: &Path, build_dir: &Path) -> bool {
@@ -33,15 +81,24 @@ impl SrcModule {
     }
 }
 
-fn find_modules_inner(dir: &Path, modules: &mut Vec<SrcModule>) -> Result<(), std::io::Error> {
+fn find_modules_inner(
+    src_dir: &Path,
+    dir: &Path,
+    modules: &mut Vec<SrcModule>,
+) -> Result<(), std::io::Error> {
+    if !std::fs::exists(dir.join("__init__.py"))? {
+        return Ok(());
+    }
+
     let read_dir = std::fs::read_dir(dir)?;
-    for entry in read_dir.filter_map(|entry| entry.ok()) {
+    for entry in read_dir.flatten() {
         let path = entry.path();
 
-        if path.extension() == Some(OsStr::new("py")) {
-            modules.push(SrcModule {
-                name: path.file_stem().unwrap().to_os_string(),
-            });
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            find_modules_inner(src_dir, &path, modules)?;
+        } else if path.extension() == Some(OsStr::new(SRC_EXT)) {
+            modules.push(SrcModule::from_path(&path, src_dir));
         }
     }
 
@@ -50,7 +107,7 @@ fn find_modules_inner(dir: &Path, modules: &mut Vec<SrcModule>) -> Result<(), st
 
 pub fn find_modules(src_dir: &Path) -> Result<Vec<SrcModule>, std::io::Error> {
     let mut modules = Vec::new();
-    find_modules_inner(src_dir, &mut modules)?;
+    find_modules_inner(src_dir, src_dir, &mut modules)?;
     Ok(modules)
 }
 
@@ -68,10 +125,14 @@ pub fn build_modules(
 
         rebuild_table = true;
         let src_path = module.src_path(src_dir);
+
+        let build_path = module.build_path(build_dir);
+        std::fs::create_dir_all(build_path.parent().unwrap()).map_err(CliError::Io)?;
+
         let output = std::process::Command::new("mpy-cross")
             .arg(&src_path)
             .arg("-o")
-            .arg(module.build_path(build_dir))
+            .arg(build_path)
             .stdin(Stdio::null())
             .output();
 
@@ -84,85 +145,6 @@ pub fn build_modules(
             });
         }
     }
+
     Ok(rebuild_table)
-}
-
-#[derive(bytemuck::NoUninit, Clone, Copy)]
-#[repr(C)]
-struct TableHeader {
-    magic: u32,
-    name_pool: u32,
-    bytecode_pool: u32,
-    module_count: u32,
-}
-
-#[derive(bytemuck::NoUninit, Clone, Copy)]
-#[repr(C)]
-struct ModulePtr {
-    name_len: u32,
-    bytecode_len: u32,
-}
-
-pub struct Table {
-    header: TableHeader,
-    module_ptrs: Vec<ModulePtr>,
-    name_pool: Vec<u8>,
-    bytecode_pool: Vec<u8>,
-}
-
-impl Table {
-    pub fn generate(build_dir: &Path, modules: &[SrcModule]) -> Result<Self, CliError> {
-        let mut module_ptrs = Vec::new();
-        let mut bytecode_pool = Vec::new();
-        let mut name_pool = Vec::new();
-
-        for module in modules.iter() {
-            let build_path = module.build_path(build_dir);
-            let len = std::fs::OpenOptions::new()
-                .read(true)
-                .open(&build_path)
-                .and_then(|mut f| f.read_to_end(&mut bytecode_pool))
-                .map_err(CliError::Io)?;
-
-            let name_bytes = module.name.as_encoded_bytes();
-            name_pool.extend_from_slice(name_bytes);
-            module_ptrs.push(ModulePtr {
-                name_len: name_bytes.len() as u32,
-                bytecode_len: len as u32,
-            });
-        }
-
-        let name_pool_offset =
-            size_of::<TableHeader>() + module_ptrs.len() * size_of::<ModulePtr>();
-        let bytecode_pool_offset = name_pool_offset + name_pool.len();
-
-        const BYTECODE_TABLE_MAGIC: u32 = 0x675c3ed9;
-
-        Ok(Self {
-            header: TableHeader {
-                magic: BYTECODE_TABLE_MAGIC,
-                name_pool: name_pool_offset as u32,
-                bytecode_pool: bytecode_pool_offset as u32,
-                module_count: module_ptrs.len() as u32,
-            },
-            module_ptrs,
-            name_pool,
-            bytecode_pool,
-        })
-    }
-
-    pub fn write_to_file(&self, path: &Path) -> Result<(), std::io::Error> {
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)?;
-
-        file.write_all(bytemuck::bytes_of(&self.header))?;
-        file.write_all(bytemuck::cast_slice(&self.module_ptrs))?;
-        file.write_all(&self.name_pool)?;
-        file.write_all(&self.bytecode_pool)?;
-
-        Ok(())
-    }
 }

@@ -9,12 +9,15 @@ use clap::Parser;
 use directories::ProjectDirs;
 use miette::{Context, IntoDiagnostic, miette};
 use reqwest::Client;
+use venice_program_table::{ProgramBuilder, VptBuilder};
 
 use crate::{
-    build::{Table, build_modules, find_modules},
+    build::{build_modules, find_modules},
     errors::CliError,
-    manifest::{Manifest, find_manifest},
+    manifest::{Manifest, find_manifest, parse_manifest},
 };
+
+const VENDOR_ID: u32 = 0x11235813;
 
 #[derive(clap::Parser)]
 #[command(version)]
@@ -36,10 +39,13 @@ enum Venice {
 
 const SRC_DIR: &str = "src";
 const BUILD_DIR: &str = "build";
-const TABLE_FILE: &str = "out.vbt";
+const TABLE_FILE: &str = "out.vpt";
+
+const VENICE_PACKAGE_NAME_PROGRAM: &[u8] = b"__venice__package_name__";
 
 fn build(dir: Option<PathBuf>) -> miette::Result<()> {
     let manifest_path = find_manifest(dir.as_deref())?;
+    let manifest = parse_manifest(&manifest_path)?;
     let manifest_dir = dir
         .as_deref()
         .unwrap_or_else(|| manifest_path.parent().unwrap());
@@ -61,10 +67,30 @@ fn build(dir: Option<PathBuf>) -> miette::Result<()> {
     if rebuild_table {
         let table_path = build_dir.join(TABLE_FILE);
 
-        Table::generate(&build_dir, &modules)
-            .into_diagnostic()
-            .wrap_err("couldn't generate bytecode table")?
-            .write_to_file(&table_path)
+        let mut vpt_builder = VptBuilder::new(VENDOR_ID);
+
+        let package_name = manifest.name.as_bytes();
+
+        let mut package_name_payload = vec![0];
+        package_name_payload.extend_from_slice(package_name);
+        vpt_builder.add_program(ProgramBuilder {
+            name: VENICE_PACKAGE_NAME_PROGRAM.to_vec(),
+            payload: package_name_payload,
+        });
+
+        for module in modules.iter() {
+            let build_path = module.build_path(&build_dir);
+
+            let mut payload = std::fs::read(&build_path).map_err(CliError::Io)?;
+            payload.insert(0, module.module_flags());
+
+            vpt_builder.add_program(ProgramBuilder {
+                name: module.python_name(package_name),
+                payload,
+            });
+        }
+
+        std::fs::write(&table_path, vpt_builder.build())
             .into_diagnostic()
             .wrap_err("couldn't write bytecode table to file")?;
     }

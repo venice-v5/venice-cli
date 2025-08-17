@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bytemuck = { version = "1.23.1", features = ["derive"] }
 cargo-v5 = "0.10.4"
 clap = { version = "4.5.40", features = ["derive"] }
 const_format = "0.2.34"
@@ -20,3 +19,8 @@ tokio = { version = "1.45.1", features = ["full"] }
 toml = "0.8.23"
 vex-v5-serial = "0.3.3"
 xxhash-rust = { version = "0.8.15", features = ["xxh32"] }
+
+[dependencies.venice-program-table]
+git = "https://github.com/venice-v5/venice-program-table.git"
+rev = "2fa8d392bb45a7b69e93f5a7e668ad4bca18007d"
+features = ["builder"]

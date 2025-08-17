@@ -79,3 +79,8 @@ pub fn find_manifest(dir: Option<&Path>) -> miette::Result<PathBuf> {
         }
     }
 }
+
+pub fn parse_manifest(path: &Path) -> miette::Result<Manifest> {
+    let file_string = std::fs::read_to_string(path).map_err(CliError::Io)?;
+    Ok(toml::from_str(&file_string).map_err(CliError::Manifest)?)
+}
