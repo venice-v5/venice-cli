@@ -5,7 +5,14 @@ use std::{
     time::SystemTime,
 };
 
-use crate::errors::CliError;
+use miette::{IntoDiagnostic, WrapErr};
+use venice_program_table::{ProgramBuilder, VptBuilder};
+
+use crate::{
+    BUILD_DIR, SRC_DIR, TABLE_FILE, VENDOR_ID,
+    errors::CliError,
+    manifest::{find_manifest, parse_manifest},
+};
 
 pub const SRC_EXT: &str = "py";
 pub const BUILD_EXT: &str = "mpy";
@@ -147,4 +154,61 @@ pub fn build_modules(
     }
 
     Ok(rebuild_table)
+}
+
+const VENICE_PACKAGE_NAME_PROGRAM: &[u8] = b"__venice__package_name__";
+
+pub fn build(dir: Option<PathBuf>) -> miette::Result<()> {
+    let manifest_path = find_manifest(dir.as_deref())?;
+    let manifest = parse_manifest(&manifest_path)?;
+    let manifest_dir = dir
+        .as_deref()
+        .unwrap_or_else(|| manifest_path.parent().unwrap());
+
+    let src_dir = manifest_dir.join(SRC_DIR);
+    let build_dir = manifest_dir.join(BUILD_DIR);
+
+    let modules = find_modules(&src_dir)
+        .map_err(CliError::Io)
+        .wrap_err("couldn't find source modules")?;
+
+    if !std::fs::exists(&build_dir).into_diagnostic()? {
+        std::fs::create_dir(&build_dir).into_diagnostic()?;
+    }
+
+    let rebuild_table =
+        build_modules(&src_dir, &build_dir, &modules).wrap_err("couldn't build source modules")?;
+
+    if rebuild_table {
+        let table_path = build_dir.join(TABLE_FILE);
+
+        let mut vpt_builder = VptBuilder::new(VENDOR_ID);
+
+        let package_name = manifest.name.as_bytes();
+
+        let mut package_name_payload = vec![0];
+        package_name_payload.extend_from_slice(package_name);
+        vpt_builder.add_program(ProgramBuilder {
+            name: VENICE_PACKAGE_NAME_PROGRAM.to_vec(),
+            payload: package_name_payload,
+        });
+
+        for module in modules.iter() {
+            let build_path = module.build_path(&build_dir);
+
+            let mut payload = std::fs::read(&build_path).map_err(CliError::Io)?;
+            payload.insert(0, module.module_flags());
+
+            vpt_builder.add_program(ProgramBuilder {
+                name: module.python_name(package_name),
+                payload,
+            });
+        }
+
+        std::fs::write(&table_path, vpt_builder.build())
+            .into_diagnostic()
+            .wrap_err("couldn't write bytecode table to file")?;
+    }
+
+    Ok(())
 }
