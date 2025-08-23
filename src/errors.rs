@@ -10,11 +10,18 @@ pub enum CliError {
     #[error(transparent)]
     Io(std::io::Error),
 
+    #[error("slot must be between 1 and 8")]
+    SlotOutOfRange,
+
     #[error(transparent)]
     Serial(vex_v5_serial::connection::serial::SerialError),
 
     #[error("no devices found")]
     NoDevice,
+
+    // TODO: use
+    #[error("non-existent version of venice")]
+    InvalidVersion,
 
     #[error("couldn't parse {MANIFEST_NAME}")]
     Manifest(toml::de::Error),

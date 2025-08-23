@@ -63,42 +63,19 @@ async fn data_dir(project_dirs: &ProjectDirs) -> Result<&Path, std::io::Error> {
     Ok(data_dir)
 }
 
-async fn update() -> miette::Result<(bool, semver::Version)> {
-    let project_dirs = project_dirs()?;
-    let data_dir = data_dir(&project_dirs).await.map_err(CliError::Io)?;
-
-    let client = Client::new();
-    let latest_version = runtime::latest_version(&client).await?;
-    let latest_bin = RtBin::from_version(latest_version);
-
-    if !runtime::bin_exists(&latest_bin, data_dir)
-        .await
-        .map_err(CliError::Io)?
-    {
-        runtime::download(&latest_bin, data_dir).await?;
-        Ok((true, latest_bin.version))
-    } else {
-        Ok((false, latest_bin.version))
-    }
-}
-
 #[tokio::main]
 async fn main() -> miette::Result<()> {
     let cmd = Venice::parse();
     let _ = runtime::latest_version(&reqwest::Client::new()).await;
 
     match cmd {
-        Venice::Build { dir } => build(dir),
-        Venice::Clean { dir } => clean(dir),
-        Venice::Update => {
-            let (updated, latest_version) = update().await?;
-            if updated {
-                println!("updated to Venice {latest_version}");
-            } else {
-                println!("already up to date ({latest_version})");
-            }
-            Ok(())
+        Venice::Build { dir } => {
+            let _ = build(dir).await?;
         }
-        Venice::Upload { dir } => upload(dir).await,
-    }
+        Venice::Clean { dir } => clean(dir)?,
+        Venice::Update => todo!(),
+        Venice::Upload { dir } => upload(dir).await?,
+    };
+
+    Ok(())
 }

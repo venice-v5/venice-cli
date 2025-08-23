@@ -158,7 +158,7 @@ pub fn build_modules(
 
 const VENICE_PACKAGE_NAME_PROGRAM: &[u8] = b"__venice__package_name__";
 
-pub fn build(dir: Option<PathBuf>) -> miette::Result<()> {
+pub async fn build(dir: Option<PathBuf>) -> miette::Result<Vec<u8>> {
     let manifest_path = find_manifest(dir.as_deref())?;
     let manifest = parse_manifest(&manifest_path)?;
     let manifest_dir = dir
@@ -172,16 +172,23 @@ pub fn build(dir: Option<PathBuf>) -> miette::Result<()> {
         .map_err(CliError::Io)
         .wrap_err("couldn't find source modules")?;
 
-    if !std::fs::exists(&build_dir).into_diagnostic()? {
-        std::fs::create_dir(&build_dir).into_diagnostic()?;
+    if !tokio::fs::try_exists(&build_dir)
+        .await
+        .map_err(CliError::Io)?
+    {
+        tokio::fs::create_dir(&build_dir)
+            .await
+            .map_err(CliError::Io)?;
     }
 
-    let rebuild_table =
-        build_modules(&src_dir, &build_dir, &modules).wrap_err("couldn't build source modules")?;
+    let table_path = build_dir.join(TABLE_FILE);
+    let rebuild_table = build_modules(&src_dir, &build_dir, &modules)
+        .wrap_err("couldn't build source modules")?
+        || !tokio::fs::try_exists(&table_path)
+            .await
+            .map_err(CliError::Io)?;
 
-    if rebuild_table {
-        let table_path = build_dir.join(TABLE_FILE);
-
+    let table = if rebuild_table {
         let mut vpt_builder = VptBuilder::new(VENDOR_ID);
 
         let package_name = manifest.name.as_bytes();
@@ -205,10 +212,14 @@ pub fn build(dir: Option<PathBuf>) -> miette::Result<()> {
             });
         }
 
-        std::fs::write(&table_path, vpt_builder.build())
+        let bytes = vpt_builder.build();
+        std::fs::write(&table_path, &bytes)
             .into_diagnostic()
             .wrap_err("couldn't write bytecode table to file")?;
-    }
+        bytes
+    } else {
+        tokio::fs::read(&table_path).await.map_err(CliError::Io)?
+    };
 
-    Ok(())
+    Ok(table)
 }

@@ -1,15 +1,14 @@
-use std::{
-    fmt::Display,
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::{fmt::Display, path::Path, str::FromStr};
 
+use bytes::Bytes;
 use miette::miette;
 use reqwest::Client;
 use serde::Deserialize;
 use thiserror::Error;
 
 use crate::errors::CliError;
+
+pub const VPT_LOAD_ADDR: u32 = 0x07800000;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RtBin {
@@ -118,13 +117,13 @@ pub async fn latest_version(client: &Client) -> miette::Result<semver::Version> 
     }
 }
 
-pub async fn download(bin: &RtBin, dir: &Path) -> Result<PathBuf, CliError> {
+async fn download(rtbin: &RtBin) -> Result<Bytes, CliError> {
     let client = reqwest::Client::new();
 
     let bytes = client
         .get(format!(
-            "https://github.com/venice-v5/venice/releases/download/{version}/{bin}",
-            version = bin.version
+            "https://github.com/venice-v5/venice/releases/download/{version}/{rtbin}",
+            version = rtbin.version
         ))
         .header("User-Agent", USER_AGENT)
         .send()
@@ -134,16 +133,28 @@ pub async fn download(bin: &RtBin, dir: &Path) -> Result<PathBuf, CliError> {
         .await
         .map_err(CliError::Network)?;
 
-    let path = dir.join(format!("{bin}"));
-    tokio::fs::write(&path, bytes).await.map_err(CliError::Io)?;
+    Ok(bytes)
+}
 
-    Ok(path)
+pub async fn fetch(rtbin: &RtBin, cache_dir: &Path) -> Result<Vec<u8>, CliError> {
+    let bin_path = cache_dir.join(format!("{rtbin}"));
+    if tokio::fs::try_exists(&bin_path)
+        .await
+        .map_err(CliError::Io)?
+    {
+        return Ok(tokio::fs::read(&bin_path).await.map_err(CliError::Io)?);
+    }
+
+    let bin = download(rtbin).await?;
+    tokio::fs::write(&bin_path, &bin)
+        .await
+        .map_err(CliError::Io)?;
+
+    Ok(bin.to_vec())
 }
 
 #[cfg(test)]
 mod tests {
-    use semver::BuildMetadata;
-
     use super::{RtBin, RtBinParseError};
 
     #[test]
