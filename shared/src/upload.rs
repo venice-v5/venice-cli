@@ -105,7 +105,7 @@ pub async fn uploaded_rts(conn: &mut SerialConnection) -> Result<Vec<RtBin>, Ser
 
 // I swear this wasn't vibe coded. I only added the superfluous amount of comments to make sure all
 // the logic was correct.
-// I belive you -- aadish 8/23/25
+// I believe you -- aadish 2025-08-23
 pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
     // Open a serial connection in the background while we build and prepare for uploading.
     let conn_task = tokio::spawn(open_connection());
@@ -145,22 +145,6 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
         fetch(&rtbin_clone, project_dirs.cache_dir()).await
     });
 
-    // Prepare the contents of the slot's INI configuration
-    // let ini_data = serde_ini::to_vec(&ProgramIniConfig {
-    //     program: Program {
-    //         name: manifest.name,
-    //         // TODO: add description from Venice.toml
-    //         description: String::from("Made in Heaven!"),
-    //         icon: format!("USER{:03}x.bmp", manifest.icon as u16),
-    //         iconalt: String::new(),
-    //         slot: manifest.slot - 1,
-    //     },
-    //     project: Project {
-    //         ide: String::from("Venice"),
-    //     },
-    // })
-    // .unwrap();
-
     // Other than the VPT, we need to upload two things:
     // - The Venice runtime
     // - The slot's INI configuration (slot_{n}.ini)
@@ -188,7 +172,7 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
             ide: String::from("Venice"),
         },
     };
-    upload_internal(
+    upload_inner(
         // conn
         &mut conn,
         // config
@@ -212,13 +196,10 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
         build(dir).await?,
         // slot
         manifest.slot,
-    ).await?;
-
-    // The INI, runtime, and VPT have all been uploaded. Operation complete.
-    Ok(())
+    ).await
 }
 
-pub async fn upload_internal(
+pub async fn upload_inner(
     conn: &mut SerialConnection,
     // metadata ini -- is optionally uploaded
     config: Option<(FixedString<23>, &ProgramIniConfig)>,
