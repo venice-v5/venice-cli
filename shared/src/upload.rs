@@ -2,6 +2,7 @@ use std::{path::PathBuf, time::Duration};
 
 use directories::ProjectDirs;
 use miette::IntoDiagnostic;
+use semver::Version;
 use tokio::task::spawn_blocking;
 use vex_v5_serial::{
     commands::file::{Program, ProgramIniConfig, Project, USER_PROGRAM_LOAD_ADDR, UploadFile},
@@ -104,6 +105,7 @@ pub async fn uploaded_rts(conn: &mut SerialConnection) -> Result<Vec<RtBin>, Ser
 
 // I swear this wasn't vibe coded. I only added the superfluous amount of comments to make sure all
 // the logic was correct.
+// I belive you -- aadish 8/23/25
 pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
     // Open a serial connection in the background while we build and prepare for uploading.
     let conn_task = tokio::spawn(open_connection());
@@ -131,8 +133,6 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
 
     // Strings needed for uploading
     let rtbin = RtBin::from_version(venice_version);
-    let rtbin_name = FixedString::new(format!("{rtbin}")).unwrap();
-    let ini_name = FixedString::new(format!("slot_{}.ini", manifest.slot)).unwrap();
 
     // Start downloading the specified version of Venice in the background, or grab it from the
     // runtime cache.
@@ -145,11 +145,37 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
         fetch(&rtbin_clone, project_dirs.cache_dir()).await
     });
 
-    // Build the package's VPT.
-    let vpt = build(dir).await?;
-
     // Prepare the contents of the slot's INI configuration
-    let ini_data = serde_ini::to_vec(&ProgramIniConfig {
+    // let ini_data = serde_ini::to_vec(&ProgramIniConfig {
+    //     program: Program {
+    //         name: manifest.name,
+    //         // TODO: add description from Venice.toml
+    //         description: String::from("Made in Heaven!"),
+    //         icon: format!("USER{:03}x.bmp", manifest.icon as u16),
+    //         iconalt: String::new(),
+    //         slot: manifest.slot - 1,
+    //     },
+    //     project: Project {
+    //         ide: String::from("Venice"),
+    //     },
+    // })
+    // .unwrap();
+
+    // Other than the VPT, we need to upload two things:
+    // - The Venice runtime
+    // - The slot's INI configuration (slot_{n}.ini)
+    let mut conn = conn_task.await.unwrap()?;
+    let ini_name = FixedString::new(format!("slot_{}.ini", manifest.slot)).unwrap();
+    let rtbin_name = FixedString::new(format!("{rtbin}")).unwrap();
+    let needs_ini_upload = brain_file_metadata(&mut conn, ini_name.clone())
+        .await
+        .map_err(CliError::Serial)?
+        .is_none();
+    let needs_rt_upload = brain_file_metadata(&mut conn, rtbin_name.clone())
+        .await
+        .map_err(CliError::Serial)?
+        .is_none();
+    let config = &ProgramIniConfig {
         program: Program {
             name: manifest.name,
             // TODO: add description from Venice.toml
@@ -161,31 +187,56 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
         project: Project {
             ide: String::from("Venice"),
         },
-    })
-    .unwrap();
+    };
+    upload_internal(
+        // conn
+        &mut conn,
+        // config
+        if needs_ini_upload { Some(
+            (
+                ini_name,
+                config
+            )
+        ) } else {
+            None
+        },
+        // runtime
+        if needs_rt_upload { Some((
+            rtbin_name,
+            bin_fetch_task.await.unwrap()?,
+            rtbin.version.clone(),
+        )) } else {
+            None
+        },
+        // vpt
+        build(dir).await?,
+        // slot
+        manifest.slot,
+    ).await?;
 
-    // Join the connection task and get a connection so we can start interacting with the brain.
-    let mut conn = conn_task.await.unwrap()?;
+    // The INI, runtime, and VPT have all been uploaded. Operation complete.
+    Ok(())
+}
 
-    // Other than the VPT, we need to upload two things:
-    // - The Venice runtime
-    // - The slot's INI configuration (slot_{n}.ini)
-    let needs_ini_upload = brain_file_metadata(&mut conn, ini_name.clone())
-        .await
-        .map_err(CliError::Serial)?
-        .is_none();
-    let needs_rt_upload = brain_file_metadata(&mut conn, rtbin_name.clone())
-        .await
-        .map_err(CliError::Serial)?
-        .is_none();
-
+pub async fn upload_internal(
+    conn: &mut SerialConnection,
+    // metadata ini -- is optionally uploaded
+    config: Option<(FixedString<23>, &ProgramIniConfig)>,
+    // runtime bin -- is optionally uploaded
+    // bad things happen if you don't upload this at the right time!
+    runtime: Option<(FixedString<23>, Vec<u8>, Version)>,
+    // vpt bytes
+    vpt: Vec<u8>,
+    // slot #,
+    slot: u8,
+) -> miette::Result<()> {
     let bin_string = FixedString::new(String::from("bin")).unwrap();
 
-    if needs_ini_upload {
+    if let Some((name, config)) = config {
         // Upload the INI we prepared
         conn.execute_command(UploadFile {
             // Must be "slot_{n}.ini"
-            filename: ini_name,
+            filename: name,
             metadata: FileMetadata {
                 extension: FixedString::new(String::from("ini")).unwrap(),
                 // ExtensionType::EncryptedBinary if we were encrypting.
@@ -202,7 +253,7 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
             },
             // Third party vendors like Venice use FileVendor::User
             vendor: Some(FileVendor::User),
-            data: ini_data,
+            data: serde_ini::to_vec(config).unwrap(),
             target: None,
             // Don't know why this would be significant for INIs.
             load_addr: USER_PROGRAM_LOAD_ADDR,
@@ -215,10 +266,7 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
         .map_err(CliError::Serial)?;
     }
 
-    if needs_rt_upload {
-        // Join the runtime fetch task and obtain the binary.
-        let bin = bin_fetch_task.await.unwrap()?;
-
+    if let Some((rtbin_name, rtbin, version)) = runtime {
         // Start uploading the runtime which user programs will link to.
         conn.execute_command(UploadFile {
             filename: rtbin_name,
@@ -227,14 +275,14 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
                 extension_type: ExtensionType::Binary,
                 timestamp: j2000_timestamp(),
                 version: vex_v5_serial::version::Version {
-                    major: rtbin.version.major as u8,
-                    minor: rtbin.version.minor as u8,
+                    major: version.major as u8,
+                    minor: version.minor as u8,
                     build: 0,
                     beta: 0,
                 },
             },
             vendor: Some(FileVendor::User),
-            data: bin,
+            data: rtbin,
             target: None,
             // This is the main load address for V5 programs.
             load_addr: USER_PROGRAM_LOAD_ADDR,
@@ -249,7 +297,7 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
     // Upload the VPT.
     conn.execute_command(UploadFile {
         // It's not technically a binary, but I believe it must still be named this way.
-        filename: FixedString::new(format!("slot_{}.bin", manifest.slot)).unwrap(),
+        filename: FixedString::new(format!("slot_{}.bin", slot)).unwrap(),
         metadata: FileMetadata {
             extension: bin_string,
             extension_type: ExtensionType::Binary,
@@ -275,6 +323,5 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
     .await
     .map_err(CliError::Serial)?;
 
-    // The INI, runtime, and VPT have all been uploaded. Operation complete.
     Ok(())
 }
