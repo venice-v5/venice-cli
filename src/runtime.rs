@@ -98,18 +98,24 @@ struct Release {
 }
 
 pub async fn latest_version(client: &Client) -> miette::Result<semver::Version> {
-    let text = client
-        .get("https://api.github.com/repos/vexide/vexide/releases/latest")
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await
-        .map_err(CliError::Network)?
-        .text()
-        .await
-        .map_err(CliError::Network)?;
-    let release = serde_json::from_str::<Release>(&text)
-        .map_err(|e| miette!("couldn't parse json response: {e}"))?;
-    Ok(release.tag_name.parse().unwrap())
+    let venice_released = false;
+
+    if venice_released {
+        let text = client
+            .get("https://api.github.com/repos/venice-v5/venice/releases/latest")
+            .header("User-Agent", USER_AGENT)
+            .send()
+            .await
+            .map_err(CliError::Network)?
+            .text()
+            .await
+            .map_err(CliError::Network)?;
+        let release = serde_json::from_str::<Release>(&text)
+            .map_err(|e| miette!("couldn't parse json response: {e}"))?;
+        Ok(release.tag_name.parse().unwrap())
+    } else {
+        Ok(semver::Version::new(0, 1, 0))
+    }
 }
 
 pub async fn download(bin: &RtBin, dir: &Path) -> Result<PathBuf, CliError> {
