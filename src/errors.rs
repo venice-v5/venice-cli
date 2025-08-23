@@ -13,6 +13,9 @@ pub enum CliError {
     #[error(transparent)]
     Serial(vex_v5_serial::connection::serial::SerialError),
 
+    #[error("no devices found")]
+    NoDevice,
+
     #[error("couldn't parse {MANIFEST_NAME}")]
     Manifest(toml::de::Error),
 
