@@ -1,21 +1,12 @@
-mod build;
-mod errors;
-mod manifest;
-mod runtime;
-mod upload;
-
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use directories::ProjectDirs;
 use miette::miette;
-use reqwest::Client;
 
-use crate::{
-    build::build, errors::CliError, manifest::find_manifest, runtime::RtBin, upload::upload,
+use shared::{
+    build::build, errors::CliError, manifest::find_manifest, upload::upload, BUILD_DIR, runtime
 };
-
-const VENDOR_ID: u32 = 0x11235813;
 
 #[derive(clap::Parser)]
 #[command(version)]
@@ -34,10 +25,6 @@ enum Venice {
     },
     Update,
 }
-
-const SRC_DIR: &str = "src";
-const BUILD_DIR: &str = "build";
-const TABLE_FILE: &str = "out.vpt";
 
 fn clean(dir: Option<PathBuf>) -> miette::Result<()> {
     let manifest_dir = match dir {

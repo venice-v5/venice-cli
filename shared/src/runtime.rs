@@ -142,7 +142,7 @@ pub async fn fetch(rtbin: &RtBin, cache_dir: &Path) -> Result<Vec<u8>, CliError>
         .await
         .map_err(CliError::Io)?
     {
-        return Ok(tokio::fs::read(&bin_path).await.map_err(CliError::Io)?);
+        return tokio::fs::read(&bin_path).await.map_err(CliError::Io);
     }
 
     let bin = download(rtbin).await?;
