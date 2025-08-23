@@ -67,12 +67,13 @@ async fn update() -> miette::Result<(bool, runtime::RtVersion)> {
 
     let client = Client::new();
     let latest_version = runtime::latest_version(&client).await?;
+    let latest_bin = latest_version.as_bin();
 
-    if !runtime::version_exists(latest_version, data_dir)
+    if !runtime::bin_exists(latest_bin, data_dir)
         .await
         .map_err(CliError::Io)?
     {
-        runtime::download(latest_version, data_dir).await?;
+        runtime::download(latest_bin, data_dir).await?;
         Ok((true, latest_version))
     } else {
         Ok((false, latest_version))

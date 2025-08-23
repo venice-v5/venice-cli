@@ -85,7 +85,8 @@ impl FromStr for RtVersion {
 }
 
 impl RtVersion {
-    pub const fn as_rt(self) -> RtBin {
+    // USD 50,000
+    pub const fn as_bin(self) -> RtBin {
         RtBin { version: self }
     }
 }
@@ -93,6 +94,12 @@ impl RtVersion {
 impl Display for RtVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "v{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
+
+impl Display for RtBin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "venice-{}.bin", self.version)
     }
 }
 
@@ -129,7 +136,7 @@ impl FromStr for RtBin {
     }
 }
 
-pub async fn installed_versions(dir: &Path) -> Result<Vec<RtVersion>, std::io::Error> {
+pub async fn installed_bins(dir: &Path) -> Result<Vec<RtBin>, std::io::Error> {
     let mut entries = tokio::fs::read_dir(dir).await?;
     let mut versions = Vec::new();
 
@@ -154,8 +161,8 @@ pub async fn installed_versions(dir: &Path) -> Result<Vec<RtVersion>, std::io::E
     Ok(versions)
 }
 
-pub async fn version_exists(version: RtVersion, dir: &Path) -> Result<bool, std::io::Error> {
-    tokio::fs::try_exists(dir.join(format!("venice-{version}.bin"))).await
+pub async fn bin_exists(bin: RtBin, dir: &Path) -> Result<bool, std::io::Error> {
+    tokio::fs::try_exists(dir.join(format!("{bin}"))).await
 }
 
 const USER_AGENT: &str = concat!("venice-cli/", env!("CARGO_PKG_VERSION"));
@@ -180,12 +187,13 @@ pub async fn latest_version(client: &Client) -> miette::Result<RtVersion> {
     Ok(release.tag_name.parse().unwrap())
 }
 
-pub async fn download(version: RtVersion, dir: &Path) -> Result<PathBuf, CliError> {
+pub async fn download(bin: RtBin, dir: &Path) -> Result<PathBuf, CliError> {
     let client = reqwest::Client::new();
 
     let bytes = client
         .get(format!(
-            "https://github.com/venice-v5/venice/releases/download/{version}/venice-{version}.bin",
+            "https://github.com/venice-v5/venice/releases/download/{version}/{bin}",
+            version = bin.version
         ))
         .header("User-Agent", USER_AGENT)
         .send()
@@ -195,7 +203,7 @@ pub async fn download(version: RtVersion, dir: &Path) -> Result<PathBuf, CliErro
         .await
         .map_err(CliError::Network)?;
 
-    let path = dir.join(format!("venice-{version}.bin"));
+    let path = dir.join(format!("{bin}"));
     tokio::fs::write(&path, bytes).await.map_err(CliError::Io)?;
 
     Ok(path)
