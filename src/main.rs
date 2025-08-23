@@ -11,7 +11,9 @@ use directories::ProjectDirs;
 use miette::miette;
 use reqwest::Client;
 
-use crate::{build::build, errors::CliError, manifest::find_manifest, upload::upload};
+use crate::{
+    build::build, errors::CliError, manifest::find_manifest, runtime::RtBin, upload::upload,
+};
 
 const VENDOR_ID: u32 = 0x11235813;
 
@@ -61,22 +63,22 @@ async fn data_dir(project_dirs: &ProjectDirs) -> Result<&Path, std::io::Error> {
     Ok(data_dir)
 }
 
-async fn update() -> miette::Result<(bool, runtime::RtVersion)> {
+async fn update() -> miette::Result<(bool, semver::Version)> {
     let project_dirs = project_dirs()?;
     let data_dir = data_dir(&project_dirs).await.map_err(CliError::Io)?;
 
     let client = Client::new();
     let latest_version = runtime::latest_version(&client).await?;
-    let latest_bin = latest_version.as_bin();
+    let latest_bin = RtBin::from_version(latest_version);
 
-    if !runtime::bin_exists(latest_bin, data_dir)
+    if !runtime::bin_exists(&latest_bin, data_dir)
         .await
         .map_err(CliError::Io)?
     {
-        runtime::download(latest_bin, data_dir).await?;
-        Ok((true, latest_version))
+        runtime::download(&latest_bin, data_dir).await?;
+        Ok((true, latest_bin.version))
     } else {
-        Ok((false, latest_version))
+        Ok((false, latest_bin.version))
     }
 }
 
