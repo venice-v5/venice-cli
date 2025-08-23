@@ -1,2 +1,3 @@
 name = "venice-stress-test"
 slot = 3
+venice-version = "0.1.0"

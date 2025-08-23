@@ -8,11 +8,13 @@ use crate::errors::CliError;
 pub const MANIFEST_NAME: &str = "Venice.toml";
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
 pub struct Manifest {
     pub name: String,
+    pub slot: u8,
+    pub venice_version: String,
     #[serde(default)]
     pub icon: ProgramIcon,
-    pub slot: u8,
 }
 
 #[derive(Deserialize, Default, Debug, Clone, Copy, Eq, PartialEq)]
