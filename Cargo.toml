@@ -1,5 +1,5 @@
 [workspace]
-members = [
+members = ["binup",
     "cli", "shared",
 ]
 resolver = "1"

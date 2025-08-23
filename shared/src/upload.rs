@@ -5,22 +5,14 @@ use miette::IntoDiagnostic;
 use semver::Version;
 use tokio::task::spawn_blocking;
 use vex_v5_serial::{
-    commands::file::{Program, ProgramIniConfig, Project, USER_PROGRAM_LOAD_ADDR, UploadFile},
-    connection::{
-        Connection,
-        serial::{self, SerialConnection, SerialError},
-    },
-    packets::{
+    commands::file::{Program, ProgramIniConfig, Project, UploadFile, USER_PROGRAM_LOAD_ADDR}, connection::{
+        serial::{self, SerialConnection, SerialError}, Connection
+    }, crc::VEX_CRC32, packets::{
         cdc2::Cdc2Ack,
         file::{
-            ExtensionType, FileExitAction, FileMetadata, FileVendor, GetDirectoryEntryPacket,
-            GetDirectoryEntryPayload, GetDirectoryEntryReplyPacket, GetDirectoryFileCountPacket,
-            GetDirectoryFileCountPayload, GetDirectoryFileCountReplyPacket, GetFileMetadataPacket,
-            GetFileMetadataPayload, GetFileMetadataReplyPacket, GetFileMetadataReplyPayload,
+            ExtensionType, FileExitAction, FileInitAction, FileInitOption, FileLoadAction, FileMetadata, FileTransferTarget, FileVendor, GetDirectoryEntryPacket, GetDirectoryEntryPayload, GetDirectoryEntryReplyPacket, GetDirectoryFileCountPacket, GetDirectoryFileCountPayload, GetDirectoryFileCountReplyPacket, GetFileMetadataPacket, GetFileMetadataPayload, GetFileMetadataReplyPacket, GetFileMetadataReplyPayload, InitFileTransferPacket, InitFileTransferPayload, InitFileTransferReplyPacket
         },
-    },
-    string::FixedString,
-    timestamp::j2000_timestamp,
+    }, string::FixedString, timestamp::j2000_timestamp
 };
 
 use crate::{
@@ -172,31 +164,35 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
             ide: String::from("Venice"),
         },
     };
+    let vpt = build(dir).await?;
+    dbg!("here");
     upload_inner(
         // conn
         &mut conn,
         // config
-        if needs_ini_upload { Some(
-            (
-                ini_name,
-                config
-            )
-        ) } else {
+        if needs_ini_upload {
+            Some((ini_name, config))
+        } else {
             None
         },
         // runtime
-        if needs_rt_upload { Some((
-            rtbin_name,
-            bin_fetch_task.await.unwrap()?,
-            rtbin.version.clone(),
-        )) } else {
+        if needs_rt_upload {
+            Some((
+                rtbin_name,
+                bin_fetch_task.await.unwrap()?,
+                rtbin.version.clone(),
+            ))
+        } else {
             None
         },
         // vpt
-        build(dir).await?,
+        vpt,
         // slot
         manifest.slot,
-    ).await
+        // after
+        None,
+    )
+    .await
 }
 
 pub async fn upload_inner(
@@ -210,9 +206,11 @@ pub async fn upload_inner(
     vpt: Vec<u8>,
     // slot #,
     slot: u8,
+    // after upload
+    after: Option<FileExitAction>,
 ) -> miette::Result<()> {
     let bin_string = FixedString::new(String::from("bin")).unwrap();
-
+    dbg!("ini");
     if let Some((name, config)) = config {
         // Upload the INI we prepared
         conn.execute_command(UploadFile {
@@ -246,7 +244,7 @@ pub async fn upload_inner(
         .await
         .map_err(CliError::Serial)?;
     }
-
+    dbg!("rt");
     if let Some((rtbin_name, rtbin, version)) = runtime {
         // Start uploading the runtime which user programs will link to.
         conn.execute_command(UploadFile {
@@ -268,15 +266,16 @@ pub async fn upload_inner(
             // This is the main load address for V5 programs.
             load_addr: USER_PROGRAM_LOAD_ADDR,
             linked_file: None,
-            after_upload: FileExitAction::ShowRunScreen,
+            after_upload: FileExitAction::DoNothing,
             progress_callback: None,
         })
         .await
         .map_err(CliError::Serial)?;
     }
-
+    dbg!("2");
     // Upload the VPT.
-    conn.execute_command(UploadFile {
+    //
+    let command = UploadFile {
         // It's not technically a binary, but I believe it must still be named this way.
         filename: FixedString::new(format!("slot_{}.bin", slot)).unwrap(),
         metadata: FileMetadata {
@@ -298,11 +297,12 @@ pub async fn upload_inner(
         linked_file: None,
         // Show the slot's run screen after uploading.
         // TODO: add CLI option to choose after upload behavior instead of hard-coding it
-        after_upload: FileExitAction::ShowRunScreen,
+        after_upload: after.unwrap_or(FileExitAction::ShowRunScreen),
         progress_callback: None,
-    })
-    .await
-    .map_err(CliError::Serial)?;
+    };
+    conn.execute_command(command)
+        .await
+        .map_err(CliError::Serial)?;
 
     Ok(())
 }
