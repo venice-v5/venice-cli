@@ -36,9 +36,9 @@ impl Display for Version {
     }
 }
 
-pub async fn latest_installed_version(dir: &Path) -> Result<Option<Version>, std::io::Error> {
+pub async fn installed_versions(dir: &Path) -> Result<Vec<Version>, std::io::Error> {
     let mut entries = tokio::fs::read_dir(dir).await?;
-    let mut latest_version = None;
+    let mut versions = Vec::new();
     let re = Regex::new(RUNTIME_RE).unwrap();
 
     loop {
@@ -55,15 +55,11 @@ pub async fn latest_installed_version(dir: &Path) -> Result<Option<Version>, std
         };
 
         if let Some(version) = Version::from_str(name, &re) {
-            latest_version = Some(
-                latest_version
-                    .map(|latest| if version > latest { version } else { latest })
-                    .unwrap_or(version),
-            );
+            versions.push(version);
         }
     }
 
-    Ok(latest_version)
+    Ok(versions)
 }
 
 pub async fn version_exists(version: Version, dir: &Path) -> Result<bool, std::io::Error> {
