@@ -61,7 +61,7 @@ async fn data_dir(project_dirs: &ProjectDirs) -> Result<&Path, std::io::Error> {
     Ok(data_dir)
 }
 
-async fn update() -> miette::Result<(bool, runtime::Version)> {
+async fn update() -> miette::Result<(bool, runtime::RtVersion)> {
     let project_dirs = project_dirs()?;
     let data_dir = data_dir(&project_dirs).await.map_err(CliError::Io)?;
 
