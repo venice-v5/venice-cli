@@ -17,6 +17,7 @@ use vex_v5_serial::{
             GetDirectoryFileCountPayload, GetDirectoryFileCountReplyPacket, GetFileMetadataPacket,
             GetFileMetadataPayload, GetFileMetadataReplyPacket, GetFileMetadataReplyPayload,
         },
+        system::{GetSystemVersionReplyPacket, ProductType},
     },
     string::FixedString,
     timestamp::j2000_timestamp,
@@ -102,6 +103,117 @@ pub async fn uploaded_rts(conn: &mut SerialConnection) -> Result<Vec<RtBin>, Ser
     Ok(rts)
 }
 
+use vex_v5_serial::packets::{
+    radio::{
+        GetRadioStatusPacket, GetRadioStatusReplyPacket, RadioChannel, SelectRadioChannelPacket,
+        SelectRadioChannelPayload, SelectRadioChannelReplyPacket,
+    },
+    system::{
+        GetSystemFlagsPacket, GetSystemFlagsReplyPacket, GetSystemVersionPacket,
+        GetSystemVersionReplyPayload,
+    },
+};
+
+async fn is_connection_wireless(connection: &mut SerialConnection) -> Result<bool, CliError> {
+    let version = connection
+        .packet_handshake::<GetSystemVersionReplyPacket>(
+            Duration::from_millis(500),
+            1,
+            GetSystemVersionPacket::new(()),
+        )
+        .await?;
+    let system_flags = connection
+        .packet_handshake::<GetSystemFlagsReplyPacket>(
+            Duration::from_millis(500),
+            1,
+            GetSystemFlagsPacket::new(()),
+        )
+        .await?
+        .try_into_inner()?;
+    let controller = matches!(version.payload.product_type, ProductType::Controller);
+
+    let tethered = system_flags.flags & (1 << 8) != 0;
+    Ok(!tethered && controller)
+}
+
+async fn switch_radio_channel(
+    conn: &mut SerialConnection,
+    channel: RadioChannel,
+) -> Result<(), CliError> {
+    let radio_status = conn
+        .packet_handshake::<GetRadioStatusReplyPacket>(
+            Duration::from_secs(2),
+            3,
+            GetRadioStatusPacket::new(()),
+        )
+        .await?
+        .try_into_inner()?;
+
+    // Return early if already in download channel.
+    // TODO: Make this also detect the bluetooth radio channel
+    if (radio_status.channel == 5 && channel == RadioChannel::Download)
+        || (radio_status.channel == 31 && channel == RadioChannel::Pit)
+        || (radio_status.channel == -11)
+    {
+        return Ok(());
+    }
+
+    if is_connection_wireless(conn).await? {
+        let channel_str = match channel {
+            RadioChannel::Download => "download",
+            RadioChannel::Pit => "pit",
+        };
+
+        // Tell the controller to switch to the download channel.
+        conn.packet_handshake::<SelectRadioChannelReplyPacket>(
+            Duration::from_secs(2),
+            3,
+            SelectRadioChannelPacket::new(SelectRadioChannelPayload { channel }),
+        )
+        .await?
+        .try_into_inner()?;
+
+        // Wait for the controller to disconnect by spamming it with a packet and waiting until that packet
+        // doesn't go through. This indicates that the radio has actually started to switch channels.
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(8)) => {
+                return Err(CliError::RadioChannelDisconnectTimeout)
+            }
+            _ = async {
+                while conn
+                    .packet_handshake::<GetRadioStatusReplyPacket>(
+                        Duration::from_millis(250),
+                        1,
+                        GetRadioStatusPacket::new(())
+                    )
+                    .await
+                    .is_ok()
+                {
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
+            } => {}
+        }
+
+        // Poll the connection of the controller to ensure the radio has switched channels by sending
+        // test packets every 250ms for 8 seconds until we get a successful reply, indicating that the
+        // controller has reconnected.
+        //
+        // If the controller doesn't a reply within 8 seconds, it hasn't reconnected correctly.
+        conn.packet_handshake::<GetRadioStatusReplyPacket>(
+            Duration::from_millis(250),
+            32,
+            GetRadioStatusPacket::new(()),
+        )
+        .await
+        .map_err(|err| match err {
+            SerialError::Timeout => CliError::RadioChannelReconnectTimeout,
+            other => CliError::Serial(other),
+        })?;
+    }
+
+    Ok(())
+}
+
 // I swear this wasn't vibe coded. I only added the superfluous amount of comments to make sure all
 // the logic was correct.
 pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
@@ -166,6 +278,8 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
 
     // Join the connection task and get a connection so we can start interacting with the brain.
     let mut conn = conn_task.await.unwrap()?;
+
+    switch_radio_channel(&mut conn, RadioChannel::Download).await?;
 
     // Other than the VPT, we need to upload two things:
     // - The Venice runtime
