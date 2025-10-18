@@ -9,21 +9,58 @@ use thiserror::Error;
 use crate::errors::CliError;
 
 pub const VPT_LOAD_ADDR: u32 = 0x07800000;
+const USER_AGENT: &str = concat!("venice-cli/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RtBin {
     pub version: semver::Version,
 }
 
+impl Display for RtBin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "venice-v{}.bin", self.version)
+    }
+}
+
 impl RtBin {
     pub const fn from_version(version: semver::Version) -> Self {
         Self { version }
     }
-}
 
-impl Display for RtBin {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "venice-v{}.bin", self.version)
+    async fn download(&self) -> Result<Bytes, CliError> {
+        let client = reqwest::Client::new();
+
+        let bytes = client
+            .get(format!(
+                "https://github.com/venice-v5/venice/releases/download/{version}/{self}",
+                version = self.version
+            ))
+            .header("User-Agent", USER_AGENT)
+            .send()
+            .await
+            .map_err(CliError::Network)?
+            .bytes()
+            .await
+            .map_err(CliError::Network)?;
+
+        Ok(bytes)
+    }
+
+    pub async fn fetch(&self, cache_dir: &Path) -> Result<Vec<u8>, CliError> {
+        let bin_path = cache_dir.join(format!("{self}"));
+        if tokio::fs::try_exists(&bin_path)
+            .await
+            .map_err(CliError::Io)?
+        {
+            return tokio::fs::read(&bin_path).await.map_err(CliError::Io);
+        }
+
+        let bin = self.download().await?;
+        tokio::fs::write(&bin_path, &bin)
+            .await
+            .map_err(CliError::Io)?;
+
+        Ok(bin.to_vec())
     }
 }
 
@@ -89,8 +126,6 @@ pub async fn bin_exists(bin: &RtBin, dir: &Path) -> Result<bool, std::io::Error>
     tokio::fs::try_exists(dir.join(format!("{bin}"))).await
 }
 
-const USER_AGENT: &str = concat!("venice-cli/", env!("CARGO_PKG_VERSION"));
-
 #[derive(Deserialize)]
 struct Release {
     tag_name: String,
@@ -115,42 +150,6 @@ pub async fn latest_version(client: &Client) -> miette::Result<semver::Version> 
     } else {
         Ok(semver::Version::new(0, 1, 0))
     }
-}
-
-async fn download(rtbin: &RtBin) -> Result<Bytes, CliError> {
-    let client = reqwest::Client::new();
-
-    let bytes = client
-        .get(format!(
-            "https://github.com/venice-v5/venice/releases/download/{version}/{rtbin}",
-            version = rtbin.version
-        ))
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await
-        .map_err(CliError::Network)?
-        .bytes()
-        .await
-        .map_err(CliError::Network)?;
-
-    Ok(bytes)
-}
-
-pub async fn fetch(rtbin: &RtBin, cache_dir: &Path) -> Result<Vec<u8>, CliError> {
-    let bin_path = cache_dir.join(format!("{rtbin}"));
-    if tokio::fs::try_exists(&bin_path)
-        .await
-        .map_err(CliError::Io)?
-    {
-        return tokio::fs::read(&bin_path).await.map_err(CliError::Io);
-    }
-
-    let bin = download(rtbin).await?;
-    tokio::fs::write(&bin_path, &bin)
-        .await
-        .map_err(CliError::Io)?;
-
-    Ok(bin.to_vec())
 }
 
 #[cfg(test)]

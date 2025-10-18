@@ -13,6 +13,7 @@ pub struct Manifest {
     pub name: String,
     pub slot: u8,
     pub venice_version: String,
+    pub description: Option<String>,
     #[serde(default)]
     pub icon: ProgramIcon,
 }

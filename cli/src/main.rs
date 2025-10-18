@@ -1,8 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::Parser;
-use directories::ProjectDirs;
-use miette::miette;
 
 use shared::{
     build::build, errors::CliError, manifest::find_manifest, upload::upload, BUILD_DIR, runtime
@@ -35,19 +33,6 @@ fn clean(dir: Option<PathBuf>) -> miette::Result<()> {
     std::fs::remove_dir_all(manifest_dir.join(BUILD_DIR)).map_err(CliError::Io)?;
 
     Ok(())
-}
-
-fn project_dirs() -> miette::Result<ProjectDirs> {
-    directories::ProjectDirs::from("org", "venice", "venice-cli")
-        .ok_or(miette!("couldn't get data dir"))
-}
-
-async fn data_dir(project_dirs: &ProjectDirs) -> Result<&Path, std::io::Error> {
-    let data_dir = project_dirs.data_dir();
-
-    tokio::fs::create_dir_all(&data_dir).await?;
-
-    Ok(data_dir)
 }
 
 #[tokio::main]

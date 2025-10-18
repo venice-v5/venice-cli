@@ -225,7 +225,7 @@ dependencies = [
  "serenity",
  "shared",
  "tokio",
- "vex-v5-serial",
+ "vex-v5-serial 0.3.3",
 ]
 
 [[package]]
@@ -537,9 +537,9 @@ dependencies = [
 
 [[package]]
 name = "core-foundation"
-version = "0.10.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2a6cd9ae233e7f62ba4e9353e81a88df7fc8a5987b8d445b4d90c879bd156f6"
+checksum = "b55271e5c8c478ad3f38ad24ef34923091e0548492a266d19b3c0b4d82574c63"
 dependencies = [
  "core-foundation-sys",
  "libc",
@@ -1747,9 +1747,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.27"
+version = "0.4.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
+checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 
 [[package]]
 name = "loop9"
@@ -2903,21 +2903,22 @@ dependencies = [
 
 [[package]]
 name = "serialport"
-version = "4.7.2"
+version = "4.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdb0bc984f6af6ef8bab54e6cf2071579ee75b9286aa9f2319a0d220c28b0a2b"
+checksum = "21f60a586160667241d7702c420fc223939fb3c0bb8d3fac84f78768e8970dee"
 dependencies = [
  "bitflags 2.9.3",
  "cfg-if",
- "core-foundation 0.10.1",
+ "core-foundation 0.10.0",
  "core-foundation-sys",
  "io-kit-sys",
  "libudev",
  "mach2",
  "nix 0.26.4",
+ "quote",
  "scopeguard",
  "unescaper",
- "winapi",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2947,7 +2948,8 @@ dependencies = [
  "tokio",
  "toml 0.9.5",
  "venice-program-table",
- "vex-v5-serial",
+ "vex-cdc",
+ "vex-v5-serial 0.4.0",
 ]
 
 [[package]]
@@ -3805,6 +3807,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "vex-cdc"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c90e84e8162191e67790494251eca4d418bb127c3cf6df6ad90dea0987fa08e7"
+dependencies = [
+ "bitflags 2.9.3",
+ "crc",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "vex-v5-serial"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3825,6 +3838,25 @@ dependencies = [
  "tokio-serial",
  "tokio-stream",
  "uuid",
+]
+
+[[package]]
+name = "vex-v5-serial"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26360afbdeca7220893a12fdb4f428a0e1ad38cc4d4e224fde0f8f2e8dbfe138"
+dependencies = [
+ "btleplug",
+ "flate2",
+ "futures",
+ "log",
+ "serialport",
+ "thiserror 2.0.16",
+ "tokio",
+ "tokio-serial",
+ "tokio-stream",
+ "uuid",
+ "vex-cdc",
 ]
 
 [[package]]
