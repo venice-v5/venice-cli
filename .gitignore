@@ -2,4 +2,4 @@
 target/**
 /tests/*/build
 .DS_Store
-*/.DS_Store
+**/.DS_Store

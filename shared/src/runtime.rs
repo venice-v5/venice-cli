@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::errors::CliError;
 
-pub const VPT_LOAD_ADDR: u32 = 0x07800000;
+pub const VPT_LOAD_ADDR: u32 = 0x07c00000;
 const USER_AGENT: &str = concat!("venice-cli/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

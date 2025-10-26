@@ -3,13 +3,13 @@ use std::{path::PathBuf, time::Duration};
 use directories::ProjectDirs;
 use miette::IntoDiagnostic;
 use tokio::task::spawn_blocking;
-use vex_cdc::{
+use vex_v5_serial::{commands::file::LinkedFile, protocol::{
     cdc2::{
         file::{
             ExtensionType, FileExitAction, FileMetadata, FileMetadataPacket, FileMetadataPayload, FileMetadataReplyPacket, FileMetadataReplyPayload, FileTransferTarget, FileVendor
         }, Cdc2Ack
-    }, VEX_CRC32
-};
+    }, Version, VEX_CRC32
+}};
 use vex_v5_serial::{
     commands::file::{j2000_timestamp, UploadFile, USER_PROGRAM_LOAD_ADDR}, protocol::FixedString, serial::{self, SerialConnection, SerialError}, Connection
 };
@@ -90,17 +90,17 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
             .parse::<semver::Version>()
             .into_diagnostic()?,
     );
-    let config = format!("[project]
-ide=Venice
-[program]
-name={}
-slot={}
-icon=USER{:03}x.bmp,
-iconalt=None
-description={}", manifest.name, manifest.slot - 1, manifest.icon as u16, manifest
+    let config = format!("[project]\
+\r\nide=Venice\
+\r\n[program]\
+\r\nname={}\
+\r\nslot={}\
+\r\nicon=USER{:03}x.bmp\
+\r\niconalt=\
+\r\ndescription={}\r\n", manifest.name, manifest.slot - 1, manifest.icon as u16, manifest
     .description
-    .unwrap_or(String::from("Made in heaven with ❤️!")));
-
+    .unwrap_or(String::from("Made in heaven with love!")));
+    dbg!(&config);
     // handle ini
     let mut conn = conn_task.await.unwrap()?;
     let ini_name = FixedString::new(format!("slot_{}.ini", manifest.slot)).unwrap();
@@ -119,7 +119,7 @@ description={}", manifest.name, manifest.slot - 1, manifest.icon as u16, manifes
                 extension: FixedString::new(String::from("ini")).unwrap(),
                 extension_type: ExtensionType::Binary,
                 timestamp: j2000_timestamp(),
-                version: vex_cdc::Version {
+                version: Version {
                     major: 0,
                     minor: 1,
                     build: 0,
@@ -134,14 +134,14 @@ description={}", manifest.name, manifest.slot - 1, manifest.icon as u16, manifes
             linked_file: None,
             after_upload: FileExitAction::DoNothing,
             // TODO?: add progress indicator
-            progress_callback: None,
+            progress_callback: Some(Box::new(|f| println!("Uploading ini {}", f))),
         })
         .await
         .map_err(CliError::Serial)?;
     }
 
     // handle the four-stage system for whether to upload rt:
-    // 1. check if rt is available by trying to fetch it from grain
+    // 1. check if rt is available by trying to fetch it from brain
     // 2. if it is not available, check if it is available on user's system
     // 3. if it isn't, download it from github
     // 4. upload the rt if its not on the brain
@@ -153,14 +153,15 @@ description={}", manifest.name, manifest.slot - 1, manifest.icon as u16, manifes
     if reupload_rt {
         let project_dir = ProjectDirs::from("org", "venice", "venice-cli").ok_or(CliError::HomeDirNotFound)?;
         let cache_dir = project_dir.cache_dir();
+        dbg!(cache_dir);
         let contents = rtbin.fetch(cache_dir).await?;
         conn.execute_command(UploadFile {
-            file_name: rtbin_name,
+            file_name: rtbin_name.clone(),
             metadata: FileMetadata {
                 extension: bin_string.clone(),
                 extension_type: ExtensionType::Binary,
                 timestamp: j2000_timestamp(),
-                version: vex_cdc::Version {
+                version: Version {
                     major: rtbin.version.major as u8,
                     minor: rtbin.version.minor as u8,
                     build: 0,
@@ -174,7 +175,7 @@ description={}", manifest.name, manifest.slot - 1, manifest.icon as u16, manifes
             load_address: USER_PROGRAM_LOAD_ADDR,
             linked_file: None,
             after_upload: FileExitAction::DoNothing,
-            progress_callback: None,
+            progress_callback: Some(Box::new(|f| println!("Uploading runtime {}", f))),
         })
         .await
         .map_err(CliError::Serial)?;
@@ -188,7 +189,7 @@ description={}", manifest.name, manifest.slot - 1, manifest.icon as u16, manifes
             extension: bin_string.clone(),
             extension_type: ExtensionType::Binary,
             timestamp: j2000_timestamp(),
-            version: vex_cdc::Version {
+            version: Version {
                 major: 0,
                 minor: 1,
                 build: 0,
@@ -197,12 +198,17 @@ description={}", manifest.name, manifest.slot - 1, manifest.icon as u16, manifes
         },
         vendor: FileVendor::User,
         data: &vpt,
-        linked_file: None,
+        linked_file: Some(
+            LinkedFile {
+                file_name: rtbin_name.clone(),
+                vendor: FileVendor::User
+            }
+        ),
         load_address: VPT_LOAD_ADDR,
         target: FileTransferTarget::Qspi,
         // TODO: add CLI option to choose after upload behavior instead of hard-coding it
         after_upload: FileExitAction::ShowRunScreen,
-        progress_callback: None,
+        progress_callback: Some(Box::new(|f| println!("Uploading VPT {}", f))),
     })
         .await
         .map_err(CliError::Serial)?;

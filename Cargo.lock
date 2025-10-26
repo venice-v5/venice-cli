@@ -2948,7 +2948,6 @@ dependencies = [
  "tokio",
  "toml 0.9.5",
  "venice-program-table",
- "vex-cdc",
  "vex-v5-serial 0.4.0",
 ]
 
@@ -3809,8 +3808,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vex-cdc"
 version = "0.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c90e84e8162191e67790494251eca4d418bb127c3cf6df6ad90dea0987fa08e7"
+source = "git+https://github.com/vexide/vex-v5-serial.git?branch=validate-crc16#aa173e8e8e0d60f78494fd1eaa0fff76bfe0a538"
 dependencies = [
  "bitflags 2.9.3",
  "crc",
@@ -3843,8 +3841,7 @@ dependencies = [
 [[package]]
 name = "vex-v5-serial"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26360afbdeca7220893a12fdb4f428a0e1ad38cc4d4e224fde0f8f2e8dbfe138"
+source = "git+https://github.com/vexide/vex-v5-serial.git?branch=validate-crc16#aa173e8e8e0d60f78494fd1eaa0fff76bfe0a538"
 dependencies = [
  "btleplug",
  "flate2",

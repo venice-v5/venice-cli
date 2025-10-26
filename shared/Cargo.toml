@@ -15,8 +15,8 @@ serde_json = "1.0.143"
 thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = ["full"] }
 toml = "0.9.5"
-vex-cdc = "0.0.5"
-vex-v5-serial = "0.4.0"
+# vex-v5-serial = "0.4.0"
+vex-v5-serial = { git = "https://github.com/vexide/vex-v5-serial.git", branch = "validate-crc16" }
 
 [dependencies.venice-program-table]
 git = "https://github.com/venice-v5/venice-program-table.git"
