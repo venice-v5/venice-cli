@@ -8,13 +8,19 @@ pub const MANIFEST_NAME: &str = "Venice.toml";
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
-pub struct Manifest {
+pub struct Project {
     pub name: String,
     pub slot: u8,
     pub venice_version: String,
     pub description: Option<String>,
     #[serde(default)]
     pub icon: ProgramIcon,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub struct Manifest {
+    project: Project,
 }
 
 #[derive(Deserialize, Default, Debug, Clone, Copy, Eq, PartialEq)]
@@ -76,7 +82,9 @@ pub fn find_manifest(dir: Option<&Path>) -> Result<PathBuf, CliError> {
     }
 }
 
-pub fn parse_manifest(path: &Path) -> Result<Manifest, CliError> {
+pub fn parse_manifest(path: &Path) -> Result<Project, CliError> {
     let file_string = std::fs::read_to_string(path).map_err(CliError::Io)?;
-    toml::from_str(&file_string).map_err(CliError::Manifest)
+    toml::from_str::<Manifest>(&file_string)
+        .map(|m| m.project)
+        .map_err(CliError::Manifest)
 }

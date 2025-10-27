@@ -22,7 +22,7 @@ use vex_v5_serial::{
 use crate::{
     build::build,
     errors::CliError,
-    manifest::{Manifest, find_manifest},
+    manifest::{Project, find_manifest},
     runtime::{RtBin, VPT_LOAD_ADDR},
 };
 
@@ -93,7 +93,7 @@ pub async fn upload(
 
     // read and parse manifest
     let manifest_path = find_manifest(dir.as_deref())?;
-    let manifest = toml::from_str::<Manifest>(&tokio::fs::read_to_string(&manifest_path).await?)?;
+    let manifest = toml::from_str::<Project>(&tokio::fs::read_to_string(&manifest_path).await?)?;
 
     if !(1..=8).contains(&manifest.slot) {
         return Err(CliError::SlotOutOfRange);
