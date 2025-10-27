@@ -1,4 +1,9 @@
-use tokio::io::{AsyncReadExt, AsyncWriteExt, stdin, stdout};
+use std::time::Duration;
+
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt, stdin, stdout},
+    time::sleep,
+};
 use vex_v5_serial::{Connection, serial::SerialConnection};
 
 use crate::errors::CliError;
@@ -24,5 +29,7 @@ pub async fn terminal(conn: &mut SerialConnection) -> Result<(), CliError> {
                 }
             }
         }
+
+        sleep(Duration::from_millis(10)).await;
     }
 }
