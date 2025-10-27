@@ -8,7 +8,7 @@ use crate::manifest::MANIFEST_NAME;
 #[derive(Debug, Error, Diagnostic)]
 pub enum CliError {
     #[error(transparent)]
-    Io(std::io::Error),
+    Io(#[from] std::io::Error),
 
     #[error("slot must be between 1 and 8")]
     SlotOutOfRange,

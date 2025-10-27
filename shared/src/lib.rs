@@ -7,4 +7,5 @@ pub mod build;
 pub mod errors;
 pub mod manifest;
 pub mod runtime;
+pub mod terminal;
 pub mod upload;

@@ -2,7 +2,13 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use shared::{
-    BUILD_DIR, build::build, errors::CliError, manifest::find_manifest, runtime, upload::upload,
+    BUILD_DIR,
+    build::build,
+    errors::CliError,
+    manifest::find_manifest,
+    runtime,
+    terminal::terminal,
+    upload::{open_connection, upload},
 };
 
 #[derive(clap::Parser)]
@@ -20,6 +26,7 @@ enum Venice {
         #[arg(long = "directory", short = 'C')]
         dir: Option<PathBuf>,
     },
+    Terminal,
     Update,
 }
 
@@ -44,8 +51,9 @@ async fn main() -> miette::Result<()> {
             let _ = build(dir).await?;
         }
         Venice::Clean { dir } => clean(dir)?,
-        Venice::Update => todo!(),
         Venice::Upload { dir } => upload(dir).await?,
+        Venice::Terminal => terminal(&mut open_connection().await?).await?,
+        Venice::Update => todo!(),
     };
 
     Ok(())
