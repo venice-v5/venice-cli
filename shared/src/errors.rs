@@ -25,19 +25,24 @@ pub enum CliError {
     #[error("radio channel reconnect timeout")]
     RadioChannelReconnectTimeout,
 
-    // TODO: use
-    #[error("non-existent version of venice")]
-    InvalidVersion,
+    #[error("invalid version of venice in {MANIFEST_NAME}: {0}")]
+    InvalidVersion(#[from] semver::Error),
+
+    #[error("unreleased version of venice in {MANIFEST_NAME}")]
+    UnreleasedVersion,
 
     #[error("couldn't parse {MANIFEST_NAME}")]
-    Manifest(toml::de::Error),
+    Manifest(#[from] toml::de::Error),
 
     #[error("couldn't build `{file}` with `mpy-cross`: {stderr}")]
     Compiler { file: PathBuf, stderr: String },
 
     #[error(transparent)]
-    Network(reqwest::Error),
+    Network(#[from] reqwest::Error),
 
     #[error("home directory could not be found")]
     HomeDirNotFound,
+
+    #[error("couldn't find {MANIFEST_NAME} in current directory or any parent directories")]
+    NoManifest,
 }

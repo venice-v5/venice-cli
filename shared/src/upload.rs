@@ -1,7 +1,6 @@
 use std::{path::PathBuf, time::Duration};
 
 use directories::ProjectDirs;
-use miette::IntoDiagnostic;
 use tokio::task::spawn_blocking;
 use vex_v5_serial::{
     Connection,
@@ -27,15 +26,14 @@ use crate::{
     runtime::{RtBin, VPT_LOAD_ADDR},
 };
 
-pub async fn open_connection() -> miette::Result<SerialConnection> {
-    let devices = serial::find_devices().map_err(CliError::Serial)?;
+pub async fn open_connection() -> Result<SerialConnection, CliError> {
+    let devices = serial::find_devices()?;
 
     spawn_blocking(move || {
         Ok(devices
             .first()
             .ok_or(CliError::NoDevice)?
-            .connect(Duration::from_secs(5))
-            .map_err(CliError::Serial)?)
+            .connect(Duration::from_secs(5))?)
     })
     .await
     .unwrap()
@@ -62,7 +60,7 @@ pub async fn brain_file_metadata(
         .await?;
 
     match reply.ack() {
-        Cdc2Ack::Ack => reply.payload.map_err(|e| SerialError::Nack(e)),
+        Cdc2Ack::Ack => reply.payload.map_err(SerialError::Nack),
         Cdc2Ack::NackProgramFile => Ok(None),
         nack => Err(SerialError::Nack(nack)),
     }
@@ -84,7 +82,7 @@ fn ini_config(name: &str, slot: u8, icon: u16, description: &str) -> String {
 // I swear this wasn't vibe coded. I only added the superfluous amount of comments to make sure all
 // the logic was correct.
 // I believe you -- aadish 2025-08-23
-pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
+pub async fn upload(dir: Option<PathBuf>) -> Result<(), CliError> {
     let bin_string = FixedString::new(String::from("bin")).unwrap();
 
     // background opening a serial conn
@@ -92,23 +90,13 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
 
     // read and parse manifest
     let manifest_path = find_manifest(dir.as_deref())?;
-    let manifest = toml::from_str::<Manifest>(
-        &tokio::fs::read_to_string(&manifest_path)
-            .await
-            .map_err(CliError::Io)?,
-    )
-    .map_err(CliError::Manifest)?;
+    let manifest = toml::from_str::<Manifest>(&tokio::fs::read_to_string(&manifest_path).await?)?;
 
     if !(1..=8).contains(&manifest.slot) {
         return Err(CliError::SlotOutOfRange.into());
     }
 
-    let rtbin = RtBin::from_version(
-        manifest
-            .venice_version
-            .parse::<semver::Version>()
-            .into_diagnostic()?,
-    );
+    let rtbin = RtBin::from_version(manifest.venice_version.parse::<semver::Version>()?);
 
     let config = ini_config(
         &manifest.name,
@@ -119,9 +107,7 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
 
     let mut conn = conn_task.await.unwrap()?;
     let ini_name = FixedString::new(format!("slot_{}.ini", manifest.slot)).unwrap();
-    let metadata = brain_file_metadata(&mut conn, ini_name.clone())
-        .await
-        .map_err(CliError::Serial)?;
+    let metadata = brain_file_metadata(&mut conn, ini_name.clone()).await?;
 
     let reupload_ini = match metadata {
         None => true,
@@ -153,8 +139,7 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
             // TODO?: add progress indicator
             progress_callback: Some(Box::new(|f| println!("Uploading ini {}", f))),
         })
-        .await
-        .map_err(CliError::Serial)?;
+        .await?;
     }
 
     // Four-stage process to determine whether the rt should be uploaded:
@@ -163,9 +148,7 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
     // 3. if it isn't, download it from github
     // 4. upload the rt if its not on the brain
     let rtbin_name = FixedString::new(format!("{rtbin}")).unwrap();
-    let rt_metadata = brain_file_metadata(&mut conn, rtbin_name.clone())
-        .await
-        .map_err(CliError::Serial)?;
+    let rt_metadata = brain_file_metadata(&mut conn, rtbin_name.clone()).await?;
 
     let reupload_rt = rt_metadata.is_none();
 
@@ -196,8 +179,7 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
             after_upload: FileExitAction::DoNothing,
             progress_callback: Some(Box::new(|f| println!("Uploading runtime {}", f))),
         })
-        .await
-        .map_err(CliError::Serial)?;
+        .await?;
     }
 
     let vpt = build(dir).await?;
@@ -227,7 +209,6 @@ pub async fn upload(dir: Option<PathBuf>) -> miette::Result<()> {
         after_upload: FileExitAction::ShowRunScreen,
         progress_callback: Some(Box::new(|f| println!("Uploading VPT {}", f))),
     })
-    .await
-    .map_err(CliError::Serial)?;
+    .await?;
     Ok(())
 }

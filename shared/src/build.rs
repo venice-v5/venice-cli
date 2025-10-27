@@ -5,7 +5,6 @@ use std::{
     time::SystemTime,
 };
 
-use miette::{IntoDiagnostic, WrapErr};
 use venice_program_table::{ProgramBuilder, VptBuilder};
 
 use crate::{
@@ -158,7 +157,7 @@ pub fn build_modules(
 
 const VENICE_PACKAGE_NAME_PROGRAM: &[u8] = b"__venice__package_name__";
 
-pub async fn build(dir: Option<PathBuf>) -> miette::Result<Vec<u8>> {
+pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
     let manifest_path = find_manifest(dir.as_deref())?;
     let manifest = parse_manifest(&manifest_path)?;
     let manifest_dir = dir
@@ -168,9 +167,7 @@ pub async fn build(dir: Option<PathBuf>) -> miette::Result<Vec<u8>> {
     let src_dir = manifest_dir.join(SRC_DIR);
     let build_dir = manifest_dir.join(BUILD_DIR);
 
-    let modules = find_modules(&src_dir)
-        .map_err(CliError::Io)
-        .wrap_err("couldn't find source modules")?;
+    let modules = find_modules(&src_dir)?;
 
     if !tokio::fs::try_exists(&build_dir)
         .await
@@ -182,8 +179,7 @@ pub async fn build(dir: Option<PathBuf>) -> miette::Result<Vec<u8>> {
     }
 
     let table_path = build_dir.join(TABLE_FILE);
-    let rebuild_table = build_modules(&src_dir, &build_dir, &modules)
-        .wrap_err("couldn't build source modules")?
+    let rebuild_table = build_modules(&src_dir, &build_dir, &modules)?
         || !tokio::fs::try_exists(&table_path)
             .await
             .map_err(CliError::Io)?;
@@ -213,9 +209,7 @@ pub async fn build(dir: Option<PathBuf>) -> miette::Result<Vec<u8>> {
         }
 
         let bytes = vpt_builder.build();
-        std::fs::write(&table_path, &bytes)
-            .into_diagnostic()
-            .wrap_err("couldn't write bytecode table to file")?;
+        std::fs::write(&table_path, &bytes)?;
         bytes
     } else {
         tokio::fs::read(&table_path).await.map_err(CliError::Io)?

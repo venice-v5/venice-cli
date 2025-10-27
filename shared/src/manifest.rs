@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use miette::miette;
 use serde::Deserialize;
 
 use crate::errors::CliError;
@@ -52,16 +51,13 @@ pub enum ProgramIcon {
     VexcodeCpp = 926,
 }
 
-pub fn find_manifest(dir: Option<&Path>) -> miette::Result<PathBuf> {
+pub fn find_manifest(dir: Option<&Path>) -> Result<PathBuf, CliError> {
     if let Some(dir) = dir {
         let manifest_path = dir.join(MANIFEST_NAME);
         return if std::fs::exists(&manifest_path).map_err(CliError::Io)? {
             Ok(manifest_path)
         } else {
-            Err(miette!(
-                "couldn't find `{MANIFEST_NAME}` in `{}`",
-                dir.display()
-            ))
+            Err(CliError::NoManifest)
         };
     }
 
@@ -75,15 +71,12 @@ pub fn find_manifest(dir: Option<&Path>) -> miette::Result<PathBuf> {
         }
 
         if !search_dir.pop() {
-            return Err(miette!(
-                "couldn't find `{MANIFEST_NAME}` in `{}` or any parent directory",
-                current_dir.display()
-            ));
+            return Err(CliError::NoManifest);
         }
     }
 }
 
-pub fn parse_manifest(path: &Path) -> miette::Result<Manifest> {
+pub fn parse_manifest(path: &Path) -> Result<Manifest, CliError> {
     let file_string = std::fs::read_to_string(path).map_err(CliError::Io)?;
-    Ok(toml::from_str(&file_string).map_err(CliError::Manifest)?)
+    toml::from_str(&file_string).map_err(CliError::Manifest)
 }

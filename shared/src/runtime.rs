@@ -1,7 +1,6 @@
 use std::{fmt::Display, path::Path, str::FromStr};
 
 use bytes::Bytes;
-use miette::miette;
 use reqwest::Client;
 use serde::Deserialize;
 use thiserror::Error;
@@ -37,28 +36,21 @@ impl RtBin {
             ))
             .header("User-Agent", USER_AGENT)
             .send()
-            .await
-            .map_err(CliError::Network)?
+            .await?
             .bytes()
-            .await
-            .map_err(CliError::Network)?;
+            .await?;
 
         Ok(bytes)
     }
 
     pub async fn fetch(&self, cache_dir: &Path) -> Result<Vec<u8>, CliError> {
         let bin_path = cache_dir.join(format!("{self}"));
-        if tokio::fs::try_exists(&bin_path)
-            .await
-            .map_err(CliError::Io)?
-        {
+        if tokio::fs::try_exists(&bin_path).await? {
             return tokio::fs::read(&bin_path).await.map_err(CliError::Io);
         }
 
         let bin = self.download().await?;
-        tokio::fs::write(&bin_path, &bin)
-            .await
-            .map_err(CliError::Io)?;
+        tokio::fs::write(&bin_path, &bin).await?;
 
         Ok(bin.to_vec())
     }
@@ -131,7 +123,7 @@ struct Release {
     tag_name: String,
 }
 
-pub async fn latest_version(client: &Client) -> miette::Result<semver::Version> {
+pub async fn latest_version(client: &Client) -> Result<semver::Version, CliError> {
     let venice_released = false;
 
     if venice_released {
@@ -139,13 +131,11 @@ pub async fn latest_version(client: &Client) -> miette::Result<semver::Version> 
             .get("https://api.github.com/repos/venice-v5/venice/releases/latest")
             .header("User-Agent", USER_AGENT)
             .send()
-            .await
-            .map_err(CliError::Network)?
+            .await?
             .text()
-            .await
-            .map_err(CliError::Network)?;
+            .await?;
         let release = serde_json::from_str::<Release>(&text)
-            .map_err(|e| miette!("couldn't parse json response: {e}"))?;
+            .unwrap_or_else(|e| panic!("couldn't parse json response: {e}"));
         Ok(release.tag_name.parse().unwrap())
     } else {
         Ok(semver::Version::new(0, 1, 0))
