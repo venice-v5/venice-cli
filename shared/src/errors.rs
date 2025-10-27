@@ -14,10 +14,7 @@ pub enum CliError {
     SlotOutOfRange,
 
     #[error(transparent)]
-    Serial(#[from] vex_v5_serial::connection::serial::SerialError),
-
-    #[error(transparent)]
-    Nack(#[from] vex_v5_serial::packets::cdc2::Cdc2Ack),
+    Serial(#[from] vex_v5_serial::serial::SerialError),
 
     #[error("no devices found")]
     NoDevice,
@@ -40,4 +37,7 @@ pub enum CliError {
 
     #[error(transparent)]
     Network(reqwest::Error),
+
+    #[error("home directory could not be found")]
+    HomeDirNotFound,
 }

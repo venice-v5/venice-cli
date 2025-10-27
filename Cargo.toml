@@ -1,24 +1,5 @@
-[package]
-name = "venice"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-bytes = "1.10.1"
-clap = { version = "4.5.40", features = ["derive"] }
-directories = "6.0.0"
-miette = { version = "7.6.0", features = ["fancy"] }
-reqwest = "0.12.22"
-semver = "1.0.26"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_ini = "0.2.0"
-serde_json = "1.0.140"
-thiserror = "2.0.12"
-tokio = { version = "1.45.1", features = ["full"] }
-toml = "0.8.23"
-vex-v5-serial = "0.3.3"
-
-[dependencies.venice-program-table]
-git = "https://github.com/venice-v5/venice-program-table.git"
-rev = "2fa8d392bb45a7b69e93f5a7e668ad4bca18007d"
-features = ["builder"]
+[workspace]
+members = ["binup",
+    "cli", "shared",
+]
+resolver = "1"
