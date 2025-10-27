@@ -6,9 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.99"
 poise = "0.6.1"
-reqwest = "0.12.23"
 serenity = "0.12.4"
-tokio = "1.47.1"
-vex-v5-serial = "0.3.3"
-shared = { path = "../shared" }
-semver = "1.0.26"
+semver = { workspace = true }
+shared = { workspace = true }
+tokio = { workspace = true }

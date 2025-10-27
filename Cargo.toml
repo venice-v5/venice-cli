@@ -1,5 +1,14 @@
 [workspace]
-members = ["binup",
-    "cli", "shared",
-]
-resolver = "1"
+members = ["binup", "cli", "shared"]
+resolver = "3"
+
+[workspace.dependencies]
+miette = "7.6.0"
+tokio = "1.47.1"
+reqwest = "0.12.23"
+semver = "1.0.26"
+shared = { path = "./shared" }
+
+[workspace.dependencies.vex-v5-serial]
+git = "https://github.com/vexide/vex-v5-serial.git"
+branch = "validate-crc16"
