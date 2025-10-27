@@ -6,10 +6,31 @@ use shared::{
     build::build,
     errors::CliError,
     manifest::find_manifest,
+    run::run,
     runtime,
     terminal::terminal,
     upload::{open_connection, upload},
 };
+use vex_v5_serial::protocol::cdc2::file::FileExitAction;
+
+#[derive(Debug, Clone, clap::ValueEnum)]
+enum AfterUpload {
+    Halt,
+    DoNothing,
+    ShowRunScreen,
+    RunProgram,
+}
+
+impl From<AfterUpload> for FileExitAction {
+    fn from(value: AfterUpload) -> Self {
+        match value {
+            AfterUpload::Halt => Self::Halt,
+            AfterUpload::DoNothing => Self::DoNothing,
+            AfterUpload::ShowRunScreen => Self::ShowRunScreen,
+            AfterUpload::RunProgram => Self::RunProgram,
+        }
+    }
+}
 
 #[derive(clap::Parser)]
 #[command(version)]
@@ -25,8 +46,13 @@ enum Venice {
     Upload {
         #[arg(long = "directory", short = 'C')]
         dir: Option<PathBuf>,
+        after_upload: Option<AfterUpload>,
     },
     Terminal,
+    Run {
+        #[arg(long = "directory", short = 'C')]
+        dir: Option<PathBuf>,
+    },
     Update,
 }
 
@@ -51,8 +77,11 @@ async fn main() -> miette::Result<()> {
             let _ = build(dir).await?;
         }
         Venice::Clean { dir } => clean(dir)?,
-        Venice::Upload { dir } => upload(dir).await?,
+        Venice::Upload { dir, after_upload } => {
+            let _ = upload(dir, after_upload.map(|a| a.into())).await?;
+        }
         Venice::Terminal => terminal(&mut open_connection().await?).await?,
+        Venice::Run { dir } => run(dir).await?,
         Venice::Update => todo!(),
     };
 

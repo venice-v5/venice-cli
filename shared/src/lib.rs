@@ -6,6 +6,7 @@ pub const TABLE_FILE: &str = "out.vpt";
 pub mod build;
 pub mod errors;
 pub mod manifest;
+pub mod run;
 pub mod runtime;
 pub mod terminal;
 pub mod upload;

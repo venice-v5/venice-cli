@@ -82,7 +82,10 @@ fn ini_config(name: &str, slot: u8, icon: u16, description: &str) -> String {
 // I swear this wasn't vibe coded. I only added the superfluous amount of comments to make sure all
 // the logic was correct.
 // I believe you -- aadish 2025-08-23
-pub async fn upload(dir: Option<PathBuf>) -> Result<(), CliError> {
+pub async fn upload(
+    dir: Option<PathBuf>,
+    after_upload: Option<FileExitAction>,
+) -> Result<SerialConnection, CliError> {
     let bin_string = FixedString::new(String::from("bin")).unwrap();
 
     // background opening a serial conn
@@ -93,7 +96,7 @@ pub async fn upload(dir: Option<PathBuf>) -> Result<(), CliError> {
     let manifest = toml::from_str::<Manifest>(&tokio::fs::read_to_string(&manifest_path).await?)?;
 
     if !(1..=8).contains(&manifest.slot) {
-        return Err(CliError::SlotOutOfRange.into());
+        return Err(CliError::SlotOutOfRange);
     }
 
     let rtbin = RtBin::from_version(manifest.venice_version.parse::<semver::Version>()?);
@@ -205,10 +208,9 @@ pub async fn upload(dir: Option<PathBuf>) -> Result<(), CliError> {
         }),
         load_address: VPT_LOAD_ADDR,
         target: FileTransferTarget::Qspi,
-        // TODO: add CLI option to choose after upload behavior instead of hard-coding it
-        after_upload: FileExitAction::ShowRunScreen,
+        after_upload: after_upload.unwrap_or(FileExitAction::ShowRunScreen),
         progress_callback: Some(Box::new(|f| println!("Uploading VPT {}", f))),
     })
     .await?;
-    Ok(())
+    Ok(conn)
 }

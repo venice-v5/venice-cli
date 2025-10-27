@@ -3195,6 +3195,7 @@ dependencies = [
  "reqwest 0.12.24",
  "shared",
  "tokio",
+ "vex-v5-serial",
 ]
 
 [[package]]
