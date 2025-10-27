@@ -1,4 +1,5 @@
 [project]
 name = "venice-stress-test"
 slot = 3
+# LOL
 venice-version = "0.1.0"
