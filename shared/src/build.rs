@@ -76,33 +76,40 @@ impl SrcModule {
         build_dir.join(&self.name).with_extension(BUILD_EXT)
     }
 
-    pub fn needs_rebuild(&self, src_dir: &Path, build_dir: &Path) -> bool {
-        let src_modified = std::fs::metadata(self.src_path(src_dir))
-            .and_then(|metadata| metadata.modified())
+    pub async fn needs_rebuild(
+        &self,
+        src_dir: &Path,
+        build_dir: &Path,
+    ) -> Result<bool, std::io::Error> {
+        let src_modified = tokio::fs::metadata(self.src_path(src_dir))
+            .await?
+            .modified()
             .unwrap_or(SystemTime::UNIX_EPOCH);
-        let build_modified = std::fs::metadata(self.build_path(build_dir))
-            .and_then(|metadata| metadata.modified())
+        let build_modified = tokio::fs::metadata(self.build_path(build_dir))
+            .await?
+            .modified()
             .unwrap_or(SystemTime::UNIX_EPOCH);
-        src_modified >= build_modified
+        Ok(src_modified >= build_modified)
     }
 }
 
-fn find_modules_inner(
+// TODO: refactor
+async fn find_modules_inner(
     src_dir: &Path,
     dir: &Path,
     modules: &mut Vec<SrcModule>,
 ) -> Result<(), std::io::Error> {
-    if !std::fs::exists(dir.join("__init__.py"))? {
+    if !tokio::fs::try_exists(dir.join("__init__.py")).await? {
         return Ok(());
     }
 
-    let read_dir = std::fs::read_dir(dir)?;
-    for entry in read_dir.flatten() {
+    let mut read_dir = tokio::fs::read_dir(dir).await?;
+    while let Some(entry) = read_dir.next_entry().await? {
         let path = entry.path();
 
-        let file_type = entry.file_type()?;
+        let file_type = entry.file_type().await?;
         if file_type.is_dir() {
-            find_modules_inner(src_dir, &path, modules)?;
+            Box::pin(find_modules_inner(src_dir, &path, modules)).await?;
         } else if path.extension() == Some(OsStr::new(SRC_EXT)) {
             modules.push(SrcModule::from_path(&path, src_dir));
         }
@@ -111,13 +118,13 @@ fn find_modules_inner(
     Ok(())
 }
 
-pub fn find_modules(src_dir: &Path) -> Result<Vec<SrcModule>, std::io::Error> {
+pub async fn find_modules(src_dir: &Path) -> Result<Vec<SrcModule>, std::io::Error> {
     let mut modules = Vec::new();
-    find_modules_inner(src_dir, src_dir, &mut modules)?;
+    find_modules_inner(src_dir, src_dir, &mut modules).await?;
     Ok(modules)
 }
 
-pub fn build_modules(
+pub async fn build_modules(
     src_dir: &Path,
     build_dir: &Path,
     modules: &[SrcModule],
@@ -125,7 +132,7 @@ pub fn build_modules(
     let mut rebuild_table = false;
 
     for module in modules.iter() {
-        if !module.needs_rebuild(src_dir, build_dir) {
+        if !module.needs_rebuild(src_dir, build_dir).await? {
             continue;
         }
 
@@ -133,7 +140,7 @@ pub fn build_modules(
         let src_path = module.src_path(src_dir);
 
         let build_path = module.build_path(build_dir);
-        std::fs::create_dir_all(build_path.parent().unwrap()).map_err(CliError::Io)?;
+        tokio::fs::create_dir_all(build_path.parent().unwrap()).await?;
 
         let output = std::process::Command::new("mpy-cross")
             .arg(&src_path)
@@ -167,22 +174,15 @@ pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
     let src_dir = manifest_dir.join(SRC_DIR);
     let build_dir = manifest_dir.join(BUILD_DIR);
 
-    let modules = find_modules(&src_dir)?;
+    let modules = find_modules(&src_dir).await?;
 
-    if !tokio::fs::try_exists(&build_dir)
-        .await
-        .map_err(CliError::Io)?
-    {
-        tokio::fs::create_dir(&build_dir)
-            .await
-            .map_err(CliError::Io)?;
+    if !tokio::fs::try_exists(&build_dir).await? {
+        tokio::fs::create_dir(&build_dir).await?;
     }
 
     let table_path = build_dir.join(TABLE_FILE);
-    let rebuild_table = build_modules(&src_dir, &build_dir, &modules)?
-        || !tokio::fs::try_exists(&table_path)
-            .await
-            .map_err(CliError::Io)?;
+    let rebuild_table = build_modules(&src_dir, &build_dir, &modules).await?
+        || !tokio::fs::try_exists(&table_path).await?;
 
     let table = if rebuild_table {
         let mut vpt_builder = VptBuilder::new(VENDOR_ID);
@@ -199,7 +199,7 @@ pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
         for module in modules.iter() {
             let build_path = module.build_path(&build_dir);
 
-            let mut payload = std::fs::read(&build_path).map_err(CliError::Io)?;
+            let mut payload = tokio::fs::read(&build_path).await?;
             payload.insert(0, module.module_flags());
 
             vpt_builder.add_program(ProgramBuilder {
@@ -209,10 +209,10 @@ pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
         }
 
         let bytes = vpt_builder.build();
-        std::fs::write(&table_path, &bytes)?;
+        tokio::fs::write(&table_path, &bytes).await?;
         bytes
     } else {
-        tokio::fs::read(&table_path).await.map_err(CliError::Io)?
+        tokio::fs::read(&table_path).await?
     };
 
     Ok(table)
