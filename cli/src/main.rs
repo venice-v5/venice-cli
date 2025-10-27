@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-
 use shared::{
-    build::build, errors::CliError, manifest::find_manifest, upload::upload, BUILD_DIR, runtime
+    BUILD_DIR, build::build, errors::CliError, manifest::find_manifest, runtime, upload::upload,
 };
 
 #[derive(clap::Parser)]
