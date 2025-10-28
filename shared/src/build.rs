@@ -86,8 +86,8 @@ impl SrcModule {
             .modified()
             .unwrap_or(SystemTime::UNIX_EPOCH);
         let build_modified = tokio::fs::metadata(self.build_path(build_dir))
-            .await?
-            .modified()
+            .await
+            .and_then(|metadata| metadata.modified())
             .unwrap_or(SystemTime::UNIX_EPOCH);
         Ok(src_modified >= build_modified)
     }
