@@ -6,7 +6,7 @@ use vex_v5_serial::{
     Connection,
     commands::file::{LinkedFile, USER_PROGRAM_LOAD_ADDR, UploadFile, j2000_timestamp},
     protocol::{
-        FixedString, VEX_CRC32, Version,
+        FixedString, Version,
         cdc2::{
             Cdc2Ack,
             file::{
