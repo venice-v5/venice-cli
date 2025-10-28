@@ -1,10 +1,10 @@
+use ::serenity::all::EditMessage;
+use anyhow::{Result, anyhow};
+use poise::serenity_prelude as serenity;
+use shared::{errors::CliError, runtime::VPT_LOAD_ADDR};
+use std::io::Read;
 use std::time::Duration;
 use std::time::Instant;
-use anyhow::{Result, anyhow};
-use ::serenity::all::EditMessage;
-use std::io::Read;
-use poise::{serenity_prelude as serenity};
-use shared::{errors::CliError, runtime::VPT_LOAD_ADDR};
 use tokio::{select, task::spawn_blocking, time::sleep};
 use vex_v5_serial::{
     Connection as _,
@@ -120,35 +120,37 @@ slot=1
 icon=USER002x.bmp
 iconalt=
 description=Made in heaven!";
-        connection.execute_command(UploadFile {
-            file_name: FixedString::new("slot_1.ini").unwrap(),
-            metadata: FileMetadata {
-                extension: FixedString::new(String::from("ini")).unwrap(),
-                extension_type: ExtensionType::Binary,
-                timestamp: j2000_timestamp(),
-                version: Version {
-                    major: 0,
-                    minor: 1,
-                    build: 0,
-                    beta: 0,
+        connection
+            .execute_command(UploadFile {
+                file_name: FixedString::new("slot_1.ini").unwrap(),
+                metadata: FileMetadata {
+                    extension: FixedString::new(String::from("ini")).unwrap(),
+                    extension_type: ExtensionType::Binary,
+                    timestamp: j2000_timestamp(),
+                    version: Version {
+                        major: 0,
+                        minor: 1,
+                        build: 0,
+                        beta: 0,
+                    },
                 },
-            },
-            vendor: FileVendor::User,
-            data: ini.as_bytes(),
-            target: FileTransferTarget::Qspi,
-            load_address: USER_PROGRAM_LOAD_ADDR,
-            linked_file: None,
-            after_upload: FileExitAction::DoNothing,
-            progress_callback: None,
-        })
-        .await?;
+                vendor: FileVendor::User,
+                data: ini.as_bytes(),
+                target: FileTransferTarget::Qspi,
+                load_address: USER_PROGRAM_LOAD_ADDR,
+                linked_file: None,
+                after_upload: FileExitAction::DoNothing,
+                progress_callback: None,
+            })
+            .await?;
     }
     {
         ctx.reply(if vpt.is_some() {
             "uploading vpt... (est. 1 second)"
         } else {
             "uploading vpt... (est. 1 second) (using stress test vpt)"
-        }).await?;
+        })
+        .await?;
         let vpt = if vpt.is_some() {
             reqwest::get(&vpt.expect("if this is logging then rust skibidi").url)
                 .await?
@@ -159,36 +161,41 @@ description=Made in heaven!";
             // use stress test
             tokio::fs::read("out.vpt").await?
         };
-        connection.execute_command(UploadFile {
-            file_name: FixedString::new("slot_1.bin").unwrap(),
-            metadata: FileMetadata {
-                extension: bin_string.clone(),
-                extension_type: ExtensionType::Binary,
-                timestamp: j2000_timestamp(),
-                version: Version {
-                    major: 0,
-                    minor: 1,
-                    build: 0,
-                    beta: 0,
+        connection
+            .execute_command(UploadFile {
+                file_name: FixedString::new("slot_1.bin").unwrap(),
+                metadata: FileMetadata {
+                    extension: bin_string.clone(),
+                    extension_type: ExtensionType::Binary,
+                    timestamp: j2000_timestamp(),
+                    version: Version {
+                        major: 0,
+                        minor: 1,
+                        build: 0,
+                        beta: 0,
+                    },
                 },
-            },
-            vendor: FileVendor::User,
-            data: &vpt,
-            linked_file: Some(LinkedFile {
-                file_name: rtbin_name.clone(),
                 vendor: FileVendor::User,
-            }),
-            load_address: VPT_LOAD_ADDR,
-            target: FileTransferTarget::Qspi,
-            after_upload: FileExitAction::RunProgram,
-            progress_callback: None,
-        })
-        .await?;
+                data: &vpt,
+                linked_file: Some(LinkedFile {
+                    file_name: rtbin_name.clone(),
+                    vendor: FileVendor::User,
+                }),
+                load_address: VPT_LOAD_ADDR,
+                target: FileTransferTarget::Qspi,
+                after_upload: FileExitAction::RunProgram,
+                progress_callback: None,
+            })
+            .await?;
     }
-    let mut handle = ctx.channel_id().say(&ctx.http(), "running, monitoring terminal output...").await?;
+    let mut handle = ctx
+        .channel_id()
+        .say(&ctx.http(), "running, monitoring terminal output...")
+        .await?;
     let time = Instant::now();
     let mut output = "".to_string();
-    while time.elapsed().as_millis() < 10000 { // 10s
+    while time.elapsed().as_millis() < 10000 {
+        // 10s
         let mut program_output = [0; 1024];
         select! {
             read = connection.read_user(&mut program_output) => {
