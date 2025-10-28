@@ -110,40 +110,32 @@ pub async fn upload(
 
     let mut conn = conn_task.await.unwrap()?;
     let ini_name = FixedString::new(format!("slot_{}.ini", manifest.slot)).unwrap();
-    let metadata = brain_file_metadata(&mut conn, ini_name.clone()).await?;
 
-    let reupload_ini = match metadata {
-        None => true,
-        Some(data) => data.crc32 != VEX_CRC32.checksum(config.as_bytes()),
-    };
-
-    if reupload_ini {
-        conn.execute_command(UploadFile {
-            // Must be "slot_{n}.ini"
-            file_name: ini_name,
-            metadata: FileMetadata {
-                extension: FixedString::new(String::from("ini")).unwrap(),
-                extension_type: ExtensionType::Binary,
-                timestamp: j2000_timestamp(),
-                version: Version {
-                    major: 0,
-                    minor: 1,
-                    build: 0,
-                    beta: 0,
-                },
+    conn.execute_command(UploadFile {
+        // Must be "slot_{n}.ini"
+        file_name: ini_name,
+        metadata: FileMetadata {
+            extension: FixedString::new(String::from("ini")).unwrap(),
+            extension_type: ExtensionType::Binary,
+            timestamp: j2000_timestamp(),
+            version: Version {
+                major: 0,
+                minor: 1,
+                build: 0,
+                beta: 0,
             },
-            // Third party vendors like Venice use FileVendor::User
-            vendor: FileVendor::User,
-            data: config.as_bytes(),
-            target: FileTransferTarget::Qspi,
-            load_address: USER_PROGRAM_LOAD_ADDR,
-            linked_file: None,
-            after_upload: FileExitAction::DoNothing,
-            // TODO?: add progress indicator
-            progress_callback: Some(Box::new(|f| println!("Uploading ini {}", f))),
-        })
-        .await?;
-    }
+        },
+        // Third party vendors like Venice use FileVendor::User
+        vendor: FileVendor::User,
+        data: config.as_bytes(),
+        target: FileTransferTarget::Qspi,
+        load_address: USER_PROGRAM_LOAD_ADDR,
+        linked_file: None,
+        after_upload: FileExitAction::DoNothing,
+        // TODO?: add progress indicator
+        progress_callback: Some(Box::new(|f| println!("Uploading ini {}", f))),
+    })
+    .await?;
 
     // Four-stage process to determine whether the rt should be uploaded:
     // 1. check if rt is available by trying to fetch it from brain
