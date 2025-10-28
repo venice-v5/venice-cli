@@ -82,8 +82,8 @@ pub fn find_manifest(dir: Option<&Path>) -> Result<PathBuf, CliError> {
     }
 }
 
-pub fn parse_manifest(path: &Path) -> Result<Project, CliError> {
-    let file_string = std::fs::read_to_string(path).map_err(CliError::Io)?;
+pub async fn parse_manifest(path: &Path) -> Result<Project, CliError> {
+    let file_string = tokio::fs::read_to_string(path).await?;
     toml::from_str::<Manifest>(&file_string)
         .map(|m| m.project)
         .map_err(CliError::Manifest)

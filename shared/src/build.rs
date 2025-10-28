@@ -166,7 +166,7 @@ const VENICE_PACKAGE_NAME_PROGRAM: &[u8] = b"__venice__package_name__";
 
 pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
     let manifest_path = find_manifest(dir.as_deref())?;
-    let manifest = parse_manifest(&manifest_path)?;
+    let manifest = parse_manifest(&manifest_path).await?;
     let manifest_dir = dir
         .as_deref()
         .unwrap_or_else(|| manifest_path.parent().unwrap());
