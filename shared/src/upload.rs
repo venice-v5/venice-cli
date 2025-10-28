@@ -80,6 +80,18 @@ fn ini_config(name: &str, slot: u8, icon: u16, description: &str) -> String {
     )
 }
 
+fn create_upload_progress_bar(message: &str) -> ProgressBar {
+    let pb = ProgressBar::new(100);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>3}% {msg}")
+            .unwrap()
+            .progress_chars("##-"),
+    );
+    pb.set_message(message.to_string());
+    pb
+}
+
 // I swear this wasn't vibe coded. I only added the superfluous amount of comments to make sure all
 // the logic was correct.
 // I believe you -- aadish 2025-08-23
@@ -112,15 +124,7 @@ pub async fn upload(
     let mut conn = conn_task.await.unwrap()?;
     let ini_name = FixedString::new(format!("slot_{}.ini", manifest.slot)).unwrap();
 
-    let ini_pb = ProgressBar::new(100);
-    ini_pb.set_style(
-        ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>3}% {msg}")
-            .unwrap()
-            .progress_chars("##-"),
-    );
-    ini_pb.set_message("Uploading ini");
-
+    let ini_pb = create_upload_progress_bar("Uploading ini");
     let ini_pb_clone = ini_pb.clone();
     conn.execute_command(UploadFile {
         // Must be "slot_{n}.ini"
@@ -166,15 +170,7 @@ pub async fn upload(
         let cache_dir = project_dir.cache_dir();
         let contents = rtbin.fetch(cache_dir).await?;
 
-        let rt_pb = ProgressBar::new(100);
-        rt_pb.set_style(
-            ProgressStyle::default_bar()
-                .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>3}% {msg}")
-                .unwrap()
-                .progress_chars("##-"),
-        );
-        rt_pb.set_message("Uploading runtime");
-
+        let rt_pb = create_upload_progress_bar("Uploading runtime");
         let rt_pb_clone = rt_pb.clone();
         conn.execute_command(UploadFile {
             file_name: rtbin_name.clone(),
@@ -206,15 +202,7 @@ pub async fn upload(
 
     let vpt = build(dir).await?;
 
-    let vpt_pb = ProgressBar::new(100);
-    vpt_pb.set_style(
-        ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>3}% {msg}")
-            .unwrap()
-            .progress_chars("##-"),
-    );
-    vpt_pb.set_message("Uploading VPT");
-
+    let vpt_pb = create_upload_progress_bar("Uploading VPT");
     let vpt_pb_clone = vpt_pb.clone();
     conn.execute_command(UploadFile {
         // It's not technically a binary, but I believe it must still be named this way.
