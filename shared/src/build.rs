@@ -128,15 +128,8 @@ pub async fn build_modules(
     src_dir: &Path,
     build_dir: &Path,
     modules: &[SrcModule],
-) -> Result<bool, CliError> {
-    let mut rebuild_table = false;
-
+) -> Result<(), CliError> {
     for module in modules.iter() {
-        if !module.needs_rebuild(src_dir, build_dir).await? {
-            continue;
-        }
-
-        rebuild_table = true;
         let src_path = module.src_path(src_dir);
 
         let build_path = module.build_path(build_dir);
@@ -159,7 +152,7 @@ pub async fn build_modules(
         }
     }
 
-    Ok(rebuild_table)
+    Ok(())
 }
 
 const VENICE_PACKAGE_NAME_PROGRAM: &[u8] = b"__venice__package_name__";
@@ -181,39 +174,32 @@ pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
     }
 
     let table_path = build_dir.join(TABLE_FILE);
-    let rebuild_table = build_modules(&src_dir, &build_dir, &modules).await?
-        || !tokio::fs::try_exists(&table_path).await?;
+    build_modules(&src_dir, &build_dir, &modules).await?;
 
-    let table = if rebuild_table {
-        let mut vpt_builder = VptBuilder::new(VENDOR_ID);
+    let mut vpt_builder = VptBuilder::new(VENDOR_ID);
 
-        let package_name = manifest.name.as_bytes();
+    let package_name = manifest.name.as_bytes();
 
-        let mut package_name_payload = vec![0];
-        package_name_payload.extend_from_slice(package_name);
+    let mut package_name_payload = vec![0];
+    package_name_payload.extend_from_slice(package_name);
+    vpt_builder.add_program(ProgramBuilder {
+        name: VENICE_PACKAGE_NAME_PROGRAM.to_vec(),
+        payload: package_name_payload,
+    });
+
+    for module in modules.iter() {
+        let build_path = module.build_path(&build_dir);
+
+        let mut payload = tokio::fs::read(&build_path).await?;
+        payload.insert(0, module.module_flags());
+
         vpt_builder.add_program(ProgramBuilder {
-            name: VENICE_PACKAGE_NAME_PROGRAM.to_vec(),
-            payload: package_name_payload,
+            name: module.python_name(package_name),
+            payload,
         });
+    }
 
-        for module in modules.iter() {
-            let build_path = module.build_path(&build_dir);
-
-            let mut payload = tokio::fs::read(&build_path).await?;
-            payload.insert(0, module.module_flags());
-
-            vpt_builder.add_program(ProgramBuilder {
-                name: module.python_name(package_name),
-                payload,
-            });
-        }
-
-        let bytes = vpt_builder.build();
-        tokio::fs::write(&table_path, &bytes).await?;
-        bytes
-    } else {
-        tokio::fs::read(&table_path).await?
-    };
-
-    Ok(table)
+    let bytes = vpt_builder.build();
+    tokio::fs::write(&table_path, &bytes).await?;
+    Ok(bytes)
 }

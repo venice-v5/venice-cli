@@ -164,11 +164,14 @@ name = "binup"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dotenv",
  "poise",
+ "reqwest 0.12.24",
  "semver",
  "serenity",
  "shared",
  "tokio",
+ "vex-v5-serial",
 ]
 
 [[package]]
@@ -665,6 +668,12 @@ dependencies = [
  "quote",
  "syn 2.0.108",
 ]
+
+[[package]]
+name = "dotenv"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 
 [[package]]
 name = "either"
