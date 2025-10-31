@@ -1,14 +1,15 @@
-import vasyncio
 from vasyncio import Sleep
+import vasyncio
 
-async def sleep():
-    await vasyncio.sleep_ms(1000)
+async def sleep(ms):
+    await Sleep(millis=ms)
+    print(f"slept {ms} ms")
+    return 100
 
 async def main():
-    print("sleeping")
-    await Sleep(millis=1000)
-    print("slept for 1000 ms")
+    task = vasyncio.spawn(sleep(500))
+    await sleep(1000)
+    ret = await task
+    print(f"task returned {ret}")
 
-event_loop = vasyncio.new_event_loop()
-event_loop.spawn(main())
-event_loop.run()
+vasyncio.run(main())
