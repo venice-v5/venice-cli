@@ -36,29 +36,21 @@ impl From<AfterUpload> for FileExitAction {
 
 #[derive(clap::Parser)]
 #[command(version)]
-enum Venice {
-    Build {
-        #[arg(long = "directory", short = 'C')]
-        dir: Option<PathBuf>,
-    },
-    Clean {
-        #[arg(long = "directory", short = 'C')]
-        dir: Option<PathBuf>,
-    },
-    Upload {
-        #[arg(long = "directory", short = 'C')]
-        dir: Option<PathBuf>,
-        after_upload: Option<AfterUpload>,
-    },
+struct Venice {
+    #[arg(long = "directory", short = 'C')]
+    dir: Option<PathBuf>,
+    #[command(subcommand)]
+    subcmd: Subcommand,
+}
+
+#[derive(Clone, clap::Subcommand)]
+enum Subcommand {
+    Build,
+    Clean,
+    Upload { after_upload: Option<AfterUpload> },
     Terminal,
-    Run {
-        #[arg(long = "directory", short = 'C')]
-        dir: Option<PathBuf>,
-    },
-    Update {
-        #[arg(long = "directory", short = 'C')]
-        dir: Option<PathBuf>,
-    },
+    Run,
+    Update,
 }
 
 fn clean(dir: Option<PathBuf>) -> miette::Result<()> {
@@ -99,17 +91,18 @@ async fn main() -> miette::Result<()> {
     let cmd = Venice::parse();
     let _ = runtime::latest_version(&reqwest::Client::new()).await;
 
-    match cmd {
-        Venice::Build { dir } => {
+    let dir = cmd.dir;
+    match cmd.subcmd {
+        Subcommand::Build => {
             let _ = build(dir).await?;
         }
-        Venice::Clean { dir } => clean(dir)?,
-        Venice::Upload { dir, after_upload } => {
+        Subcommand::Clean => clean(dir)?,
+        Subcommand::Upload { after_upload } => {
             let _ = upload(dir, after_upload.map(|a| a.into())).await?;
         }
-        Venice::Terminal => terminal(&mut open_connection().await?).await?,
-        Venice::Run { dir } => run(dir).await?,
-        Venice::Update { dir } => update(dir).await?,
+        Subcommand::Terminal => terminal(&mut open_connection().await?).await?,
+        Subcommand::Run => run(dir).await?,
+        Subcommand::Update => update(dir).await?,
     };
 
     Ok(())

@@ -9,4 +9,7 @@ poise = "0.6.1"
 serenity = "0.12.4"
 semver = { workspace = true }
 shared = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+dotenv = "0.15.0"
+vex-v5-serial.workspace = true
+reqwest.workspace = true

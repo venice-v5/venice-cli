@@ -1,12 +1,13 @@
 use std::{path::PathBuf, time::Duration};
 
 use directories::ProjectDirs;
+use indicatif::{ProgressBar, ProgressStyle};
 use tokio::task::spawn_blocking;
 use vex_v5_serial::{
     Connection,
     commands::file::{LinkedFile, USER_PROGRAM_LOAD_ADDR, UploadFile, j2000_timestamp},
     protocol::{
-        FixedString, VEX_CRC32, Version,
+        FixedString, Version,
         cdc2::{
             Cdc2Ack,
             file::{
@@ -22,7 +23,7 @@ use vex_v5_serial::{
 use crate::{
     build::build,
     errors::CliError,
-    manifest::{Project, find_manifest},
+    manifest::{find_manifest, parse_manifest},
     runtime::{RtBin, VPT_LOAD_ADDR},
 };
 
@@ -79,6 +80,18 @@ fn ini_config(name: &str, slot: u8, icon: u16, description: &str) -> String {
     )
 }
 
+fn create_upload_progress_bar(message: &str) -> ProgressBar {
+    let pb = ProgressBar::new(100);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>3}% {msg}")
+            .unwrap()
+            .progress_chars("##-"),
+    );
+    pb.set_message(message.to_string());
+    pb
+}
+
 // I swear this wasn't vibe coded. I only added the superfluous amount of comments to make sure all
 // the logic was correct.
 // I believe you -- aadish 2025-08-23
@@ -93,7 +106,7 @@ pub async fn upload(
 
     // read and parse manifest
     let manifest_path = find_manifest(dir.as_deref())?;
-    let manifest = toml::from_str::<Project>(&tokio::fs::read_to_string(&manifest_path).await?)?;
+    let manifest = parse_manifest(&manifest_path).await?;
 
     if !(1..=8).contains(&manifest.slot) {
         return Err(CliError::SlotOutOfRange);
@@ -110,40 +123,36 @@ pub async fn upload(
 
     let mut conn = conn_task.await.unwrap()?;
     let ini_name = FixedString::new(format!("slot_{}.ini", manifest.slot)).unwrap();
-    let metadata = brain_file_metadata(&mut conn, ini_name.clone()).await?;
 
-    let reupload_ini = match metadata {
-        None => true,
-        Some(data) => data.crc32 != VEX_CRC32.checksum(config.as_bytes()),
-    };
-
-    if reupload_ini {
-        conn.execute_command(UploadFile {
-            // Must be "slot_{n}.ini"
-            file_name: ini_name,
-            metadata: FileMetadata {
-                extension: FixedString::new(String::from("ini")).unwrap(),
-                extension_type: ExtensionType::Binary,
-                timestamp: j2000_timestamp(),
-                version: Version {
-                    major: 0,
-                    minor: 1,
-                    build: 0,
-                    beta: 0,
-                },
+    let ini_pb = create_upload_progress_bar("Uploading ini");
+    let ini_pb_clone = ini_pb.clone();
+    conn.execute_command(UploadFile {
+        // Must be "slot_{n}.ini"
+        file_name: ini_name,
+        metadata: FileMetadata {
+            extension: FixedString::new(String::from("ini")).unwrap(),
+            extension_type: ExtensionType::Binary,
+            timestamp: j2000_timestamp(),
+            version: Version {
+                major: 0,
+                minor: 1,
+                build: 0,
+                beta: 0,
             },
-            // Third party vendors like Venice use FileVendor::User
-            vendor: FileVendor::User,
-            data: config.as_bytes(),
-            target: FileTransferTarget::Qspi,
-            load_address: USER_PROGRAM_LOAD_ADDR,
-            linked_file: None,
-            after_upload: FileExitAction::DoNothing,
-            // TODO?: add progress indicator
-            progress_callback: Some(Box::new(|f| println!("Uploading ini {}", f))),
-        })
-        .await?;
-    }
+        },
+        // Third party vendors like Venice use FileVendor::User
+        vendor: FileVendor::User,
+        data: config.as_bytes(),
+        target: FileTransferTarget::Qspi,
+        load_address: USER_PROGRAM_LOAD_ADDR,
+        linked_file: None,
+        after_upload: FileExitAction::DoNothing,
+        progress_callback: Some(Box::new(move |progress| {
+            ini_pb_clone.set_position((progress * 100.0) as u64);
+        })),
+    })
+    .await?;
+    ini_pb.finish_with_message("Uploading ini - done");
 
     // Four-stage process to determine whether the rt should be uploaded:
     // 1. check if rt is available by trying to fetch it from brain
@@ -160,6 +169,9 @@ pub async fn upload(
             ProjectDirs::from("org", "venice", "venice-cli").ok_or(CliError::HomeDirNotFound)?;
         let cache_dir = project_dir.cache_dir();
         let contents = rtbin.fetch(cache_dir).await?;
+
+        let rt_pb = create_upload_progress_bar("Uploading runtime");
+        let rt_pb_clone = rt_pb.clone();
         conn.execute_command(UploadFile {
             file_name: rtbin_name.clone(),
             metadata: FileMetadata {
@@ -180,12 +192,18 @@ pub async fn upload(
             load_address: USER_PROGRAM_LOAD_ADDR,
             linked_file: None,
             after_upload: FileExitAction::DoNothing,
-            progress_callback: Some(Box::new(|f| println!("Uploading runtime {}", f))),
+            progress_callback: Some(Box::new(move |progress| {
+                rt_pb_clone.set_position((progress * 100.0) as u64);
+            })),
         })
         .await?;
+        rt_pb.finish_with_message("Uploading runtime - done");
     }
 
     let vpt = build(dir).await?;
+
+    let vpt_pb = create_upload_progress_bar("Uploading VPT");
+    let vpt_pb_clone = vpt_pb.clone();
     conn.execute_command(UploadFile {
         // It's not technically a binary, but I believe it must still be named this way.
         file_name: FixedString::new(format!("slot_{}.bin", manifest.slot)).unwrap(),
@@ -209,8 +227,11 @@ pub async fn upload(
         load_address: VPT_LOAD_ADDR,
         target: FileTransferTarget::Qspi,
         after_upload: after_upload.unwrap_or(FileExitAction::ShowRunScreen),
-        progress_callback: Some(Box::new(|f| println!("Uploading VPT {}", f))),
+        progress_callback: Some(Box::new(move |progress| {
+            vpt_pb_clone.set_position((progress * 100.0) as u64);
+        })),
     })
     .await?;
+    vpt_pb.finish_with_message("Uploading VPT - done");
     Ok(conn)
 }

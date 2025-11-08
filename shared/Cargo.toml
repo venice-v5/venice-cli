@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 bytes = "1.10.1"
 directories = "6.0.0"
+indicatif = "0.18.2"
 serde = "1.0.219"
 serde_ini = "0.2.0"
 serde_json = "1.0.143"
@@ -13,7 +14,7 @@ thiserror = "2.0.16"
 toml = "0.9.5"
 semver = { workspace = true }
 reqwest = { workspace = true }
-tokio = { workspace = true, features = ["fs"] }
+tokio = { workspace = true, features = ["fs", "io-std"] }
 vex-v5-serial = { workspace = true }
 miette = { workspace = true }
 
