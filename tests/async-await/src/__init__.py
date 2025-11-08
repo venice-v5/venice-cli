@@ -1,8 +1,8 @@
-from vasyncio import Sleep
 import vasyncio
+import venice
 
 async def sleep(ms):
-    await Sleep(millis=ms)
+    await vasyncio.Sleep(ms, venice.TimeUnit.MILLIS)
     print(f"slept {ms} ms")
     return 100
 
