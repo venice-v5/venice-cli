@@ -1,14 +1,27 @@
-[workspace]
-members = ["binup", "cli", "shared"]
-resolver = "3"
+[package]
+name = "venice_cli"
+version = "0.1.0"
+edition = "2024"
+authors = ["Aadish Verma <aadish@ohs.stanford.edu>", "Faisal Malallah <faisal@fibn.cc>"]
 
-[workspace.dependencies]
-miette = "7.6.0"
-tokio = "1.47.1"
+[dependencies]
+clap = { version = "4.5.40", features = ["derive"] }
+miette = { version = "7.6.0", features = ["fancy"] }
+tokio = { version = "1.47.1", features = ["full"] }
 reqwest = "0.12.23"
 semver = "1.0.26"
-shared = { path = "./shared" }
+vex-v5-serial = "0.5.1"
+bytes = "1.10.1"
+directories = "6.0.0"
+indicatif = "0.18.2"
+serde = "1.0.219"
+serde_ini = "0.2.0"
+serde_json = "1.0.143"
+thiserror = "2.0.16"
+toml = "0.9.5"
+toml_edit = "0.23.7"
 
-[workspace.dependencies.vex-v5-serial]
-git = "https://github.com/vexide/vex-v5-serial.git"
-branch = "validate-crc16"
+[dependencies.venice-program-table]
+git = "https://github.com/venice-v5/venice-program-table.git"
+rev = "2fa8d392bb45a7b69e93f5a7e668ad4bca18007d"
+features = ["builder"]
