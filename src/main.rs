@@ -1,17 +1,30 @@
+pub const VENDOR_ID: u32 = 0x11235813;
+pub const SRC_DIR: &str = "src";
+pub const BUILD_DIR: &str = "build";
+pub const TABLE_FILE: &str = "out.vpt";
+
+pub mod build;
+pub mod errors;
+pub mod manifest;
+pub mod run;
+pub mod runtime;
+pub mod terminal;
+pub mod upload;
+
+
 use std::path::PathBuf;
 
 use clap::Parser;
 use miette::IntoDiagnostic;
-use shared::{
-    BUILD_DIR,
-    build::build,
-    errors::CliError,
-    manifest::{MANIFEST_NAME, find_manifest},
-    run::run,
-    runtime::{self, latest_version},
-    terminal::terminal,
-    upload::{open_connection, upload},
-};
+
+use build::build;
+use errors::CliError;
+use manifest::{MANIFEST_NAME, find_manifest};
+use run::run;
+use runtime::{latest_version};
+use terminal::terminal;
+use upload::{open_connection, upload};
+
 use toml_edit::{DocumentMut, Formatted, Item, Value};
 use vex_v5_serial::protocol::cdc2::file::FileExitAction;
 

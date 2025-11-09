@@ -148,7 +148,7 @@ pub async fn upload(
         linked_file: None,
         after_upload: FileExitAction::DoNothing,
         progress_callback: Some(Box::new(move |progress| {
-            ini_pb_clone.set_position((progress * 100.0) as u64);
+            ini_pb_clone.set_position(progress as u64);
         })),
     })
     .await?;
@@ -193,7 +193,7 @@ pub async fn upload(
             linked_file: None,
             after_upload: FileExitAction::DoNothing,
             progress_callback: Some(Box::new(move |progress| {
-                rt_pb_clone.set_position((progress * 100.0) as u64);
+                rt_pb_clone.set_position(progress as u64);
             })),
         })
         .await?;
@@ -228,7 +228,7 @@ pub async fn upload(
         target: FileTransferTarget::Qspi,
         after_upload: after_upload.unwrap_or(FileExitAction::ShowRunScreen),
         progress_callback: Some(Box::new(move |progress| {
-            vpt_pb_clone.set_position((progress * 100.0) as u64);
+            vpt_pb_clone.set_position(progress as u64);
         })),
     })
     .await?;
