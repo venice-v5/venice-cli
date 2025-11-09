@@ -2266,15 +2266,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
-name = "venice-program-table"
-version = "0.1.0"
-source = "git+https://github.com/venice-v5/venice-program-table.git?rev=2fa8d392bb45a7b69e93f5a7e668ad4bca18007d#2fa8d392bb45a7b69e93f5a7e668ad4bca18007d"
-dependencies = [
- "bytemuck",
-]
-
-[[package]]
-name = "venice_cli"
+name = "venice-cli"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -2293,6 +2285,14 @@ dependencies = [
  "toml_edit",
  "venice-program-table",
  "vex-v5-serial",
+]
+
+[[package]]
+name = "venice-program-table"
+version = "0.1.0"
+source = "git+https://github.com/venice-v5/venice-program-table.git?rev=2fa8d392bb45a7b69e93f5a7e668ad4bca18007d#2fa8d392bb45a7b69e93f5a7e668ad4bca18007d"
+dependencies = [
+ "bytemuck",
 ]
 
 [[package]]

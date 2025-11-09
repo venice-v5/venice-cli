@@ -1,8 +1,12 @@
 [package]
-name = "venice_cli"
+name = "venice-cli"
 version = "0.1.0"
 edition = "2024"
 authors = ["Faisal Malallah <faisal@fibn.cc>", "Aadish Verma <aadish@ohs.stanford.edu>"]
+
+[[bin]]
+name = "venice"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5.40", features = ["derive"] }
