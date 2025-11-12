@@ -187,6 +187,13 @@ pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
         payload: package_name_payload,
     });
 
+    let mut typing_contents = include_bytes!("typing/typing.mpy").to_vec();
+    typing_contents.insert(0, 0);
+    vpt_builder.add_program(ProgramBuilder {
+        name: b"typing".to_vec(),
+        payload: typing_contents,
+    });
+
     for module in modules.iter() {
         let build_path = module.build_path(&build_dir);
 

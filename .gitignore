@@ -2,3 +2,5 @@
 /tests/*/build
 /.direnv
 .env
+
+**/__pycache__
