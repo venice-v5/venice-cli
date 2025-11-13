@@ -163,6 +163,7 @@ pub async fn upload(
     let project_dir =
         ProjectDirs::from("org", "venice", "venice-cli").ok_or(CliError::HomeDirNotFound)?;
     let cache_dir = project_dir.cache_dir();
+    tokio::fs::create_dir_all(cache_dir).await?;
     let rt_contents = rtbin.fetch(cache_dir).await?;
     let rt_crc32 = VEX_CRC32.checksum(&rt_contents);
 
