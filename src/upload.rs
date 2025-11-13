@@ -7,7 +7,7 @@ use vex_v5_serial::{
     Connection,
     commands::file::{LinkedFile, USER_PROGRAM_LOAD_ADDR, UploadFile, j2000_timestamp},
     protocol::{
-        FixedString, Version,
+        FixedString, VEX_CRC32, Version,
         cdc2::{
             Cdc2Ack,
             file::{
@@ -161,17 +161,20 @@ pub async fn upload(
     // 2. if it is not available, check if it is available on user's system
     // 3. if it isn't, download it from github
     // 4. upload the rt if its not on the brain
+    let project_dir =
+        ProjectDirs::from("org", "venice", "venice-cli").ok_or(CliError::HomeDirNotFound)?;
+    let cache_dir = project_dir.cache_dir();
+    let rt_contents = rtbin.fetch(cache_dir).await?;
+    let rt_crc32 = VEX_CRC32.checksum(&rt_contents);
+
     let rtbin_name = FixedString::new(format!("{rtbin}")).unwrap();
     let rt_metadata = brain_file_metadata(&mut conn, rtbin_name.clone()).await?;
 
-    let reupload_rt = rt_metadata.is_none();
+    let reupload_rt = rt_metadata
+        .map(|metadata| metadata.crc32 == rt_crc32)
+        .unwrap_or(true);
 
     if reupload_rt {
-        let project_dir =
-            ProjectDirs::from("org", "venice", "venice-cli").ok_or(CliError::HomeDirNotFound)?;
-        let cache_dir = project_dir.cache_dir();
-        let contents = rtbin.fetch(cache_dir).await?;
-
         let rt_pb = create_upload_progress_bar("Uploading runtime");
         let rt_pb_clone = rt_pb.clone();
         conn.execute_command(UploadFile {
@@ -188,7 +191,7 @@ pub async fn upload(
                 },
             },
             vendor: FileVendor::User,
-            data: &contents,
+            data: &rt_contents,
             target: FileTransferTarget::Qspi,
             // This is the main load address for V5 programs.
             load_address: USER_PROGRAM_LOAD_ADDR,
