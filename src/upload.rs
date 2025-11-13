@@ -21,7 +21,7 @@ use vex_v5_serial::{
 };
 
 use crate::{
-    build::build,
+    build::build_inner,
     errors::CliError,
     manifest::{find_manifest, parse_manifest},
     runtime::{RtBin, VPT_LOAD_ADDR},
@@ -112,7 +112,7 @@ pub async fn upload(
         return Err(CliError::SlotOutOfRange);
     }
 
-    let vpt = build(dir).await?;
+    let vpt = build_inner(&manifest, &manifest_path.parent().unwrap()).await?;
 
     let rtbin = RtBin::from_version(manifest.venice_version.parse::<semver::Version>()?);
 

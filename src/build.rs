@@ -10,7 +10,7 @@ use venice_program_table::{ProgramBuilder, VptBuilder};
 use crate::{
     BUILD_DIR, SRC_DIR, TABLE_FILE, VENDOR_ID,
     errors::CliError,
-    manifest::{find_manifest, parse_manifest},
+    manifest::{Project, find_manifest, parse_manifest},
 };
 
 pub const SRC_EXT: &str = "py";
@@ -157,13 +157,7 @@ pub async fn build_modules(
 
 const VENICE_PACKAGE_NAME_PROGRAM: &[u8] = b"__venice__package_name__";
 
-pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
-    let manifest_path = find_manifest(dir.as_deref())?;
-    let manifest = parse_manifest(&manifest_path).await?;
-    let manifest_dir = dir
-        .as_deref()
-        .unwrap_or_else(|| manifest_path.parent().unwrap());
-
+pub async fn build_inner(manifest: &Project, manifest_dir: &Path) -> Result<Vec<u8>, CliError> {
     let src_dir = manifest_dir.join(SRC_DIR);
     let build_dir = manifest_dir.join(BUILD_DIR);
 
@@ -202,4 +196,14 @@ pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
     let bytes = vpt_builder.build();
     tokio::fs::write(&table_path, &bytes).await?;
     Ok(bytes)
+}
+
+pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
+    let manifest_path = find_manifest(dir.as_deref())?;
+    let manifest = parse_manifest(&manifest_path).await?;
+    let manifest_dir = dir
+        .as_deref()
+        .unwrap_or_else(|| manifest_path.parent().unwrap());
+
+    build_inner(&manifest, manifest_dir).await
 }
