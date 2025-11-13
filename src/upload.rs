@@ -156,11 +156,10 @@ pub async fn upload(
     .await?;
     ini_pb.finish_with_message("Uploading ini - done");
 
-    // Four-stage process to determine whether the rt should be uploaded:
-    // 1. check if rt is available by trying to fetch it from brain
-    // 2. if it is not available, check if it is available on user's system
-    // 3. if it isn't, download it from github
-    // 4. upload the rt if its not on the brain
+    // Determining whether the rt should be uploaded or not:
+    // 1. fetch the rt from the user's system or download it from github
+    // 2. compare the checksum of the rt uploaded on the brain with the checksum of the rt on the system
+    // 3. if the checksums do not match, or if the rt is not on the brain, then (re)upload it.
     let project_dir =
         ProjectDirs::from("org", "venice", "venice-cli").ok_or(CliError::HomeDirNotFound)?;
     let cache_dir = project_dir.cache_dir();
