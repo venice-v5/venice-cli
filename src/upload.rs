@@ -112,6 +112,8 @@ pub async fn upload(
         return Err(CliError::SlotOutOfRange);
     }
 
+    let vpt = build(dir).await?;
+
     let rtbin = RtBin::from_version(manifest.venice_version.parse::<semver::Version>()?);
 
     let config = ini_config(
@@ -199,8 +201,6 @@ pub async fn upload(
         .await?;
         rt_pb.finish_with_message("Uploading runtime - done");
     }
-
-    let vpt = build(dir).await?;
 
     let vpt_pb = create_upload_progress_bar("Uploading VPT");
     let vpt_pb_clone = vpt_pb.clone();
