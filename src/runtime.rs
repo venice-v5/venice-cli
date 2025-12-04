@@ -1,14 +1,33 @@
-use std::{fmt::Display, path::Path, str::FromStr};
+use std::{fmt::Display, path::Path, path::PathBuf, str::FromStr};
 
-use bytes::Bytes;
-use reqwest::Client;
-use serde::Deserialize;
 use thiserror::Error;
 
 use crate::errors::CliError;
 
 pub const VPT_LOAD_ADDR: u32 = 0x07c00000;
-const USER_AGENT: &str = concat!("venice-cli/", env!("CARGO_PKG_VERSION"));
+
+/// Runtime source configuration provided by the venice package
+#[derive(Clone)]
+pub struct RuntimeSource {
+    pub path: PathBuf,
+    pub version: semver::Version,
+}
+
+impl RuntimeSource {
+    pub fn new(path: PathBuf, version: semver::Version) -> Self {
+        Self { path, version }
+    }
+
+    /// Read the runtime binary from the local path
+    pub async fn read_binary(&self) -> Result<Vec<u8>, CliError> {
+        tokio::fs::read(&self.path).await.map_err(CliError::Io)
+    }
+
+    /// Get the RtBin representation for this runtime
+    pub fn as_rtbin(&self) -> RtBin {
+        RtBin::from_version(self.version.clone())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RtBin {
@@ -24,36 +43,6 @@ impl Display for RtBin {
 impl RtBin {
     pub const fn from_version(version: semver::Version) -> Self {
         Self { version }
-    }
-
-    async fn download(&self) -> Result<Bytes, CliError> {
-        let client = reqwest::Client::new();
-
-        let bytes = client
-            .get(format!(
-                "https://github.com/venice-v5/venice/releases/download/{version}/{self}",
-                version = self.version
-            ))
-            .header("User-Agent", USER_AGENT)
-            .send()
-            .await?
-            .bytes()
-            .await?;
-
-        Ok(bytes)
-    }
-
-    pub async fn fetch(&self, cache_dir: &Path) -> Result<Vec<u8>, CliError> {
-        let bin_path = cache_dir.join(format!("{self}"));
-        dbg!(&bin_path);
-        if tokio::fs::try_exists(&bin_path).await? {
-            return tokio::fs::read(&bin_path).await.map_err(CliError::Io);
-        }
-
-        let bin = self.download().await?;
-        tokio::fs::write(&bin_path, &bin).await?;
-
-        Ok(bin.to_vec())
     }
 }
 
@@ -117,30 +106,6 @@ pub async fn installed_bins(dir: &Path) -> Result<Vec<RtBin>, std::io::Error> {
 
 pub async fn bin_exists(bin: &RtBin, dir: &Path) -> Result<bool, std::io::Error> {
     tokio::fs::try_exists(dir.join(format!("{bin}"))).await
-}
-
-#[derive(Deserialize)]
-struct Release {
-    tag_name: String,
-}
-
-pub async fn latest_version(client: &Client) -> Result<semver::Version, CliError> {
-    let venice_released = false;
-
-    if venice_released {
-        let text = client
-            .get("https://api.github.com/repos/venice-v5/venice/releases/latest")
-            .header("User-Agent", USER_AGENT)
-            .send()
-            .await?
-            .text()
-            .await?;
-        let release = serde_json::from_str::<Release>(&text)
-            .unwrap_or_else(|e| panic!("couldn't parse json response: {e}"));
-        Ok(release.tag_name.parse().unwrap())
-    } else {
-        Ok(semver::Version::new(0, 1, 0))
-    }
 }
 
 #[cfg(test)]

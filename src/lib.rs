@@ -17,17 +17,14 @@ use tokio::runtime::Runtime;
 
 use std::path::PathBuf;
 
-use miette::IntoDiagnostic;
-
 use build::build;
 use errors::CliError;
-use manifest::{MANIFEST_NAME, find_manifest};
+use manifest::find_manifest;
 use run::run;
-use runtime::latest_version;
 use terminal::terminal;
 use upload::{open_connection, upload};
+use runtime::RuntimeSource;
 
-use toml_edit::{DocumentMut, Formatted, Item, Value};
 use vex_v5_serial::protocol::cdc2::file::FileExitAction;
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -54,6 +51,10 @@ impl From<AfterUpload> for FileExitAction {
 struct Venice {
     #[arg(long = "directory", short = 'C')]
     dir: Option<PathBuf>,
+    /// Path to a raw runtime binary (dev builds only)
+    #[cfg(debug_assertions)]
+    #[arg(long = "raw-binary")]
+    raw_binary: Option<PathBuf>,
     #[command(subcommand)]
     subcmd: Subcommand,
 }
@@ -65,7 +66,6 @@ enum Subcommand {
     Upload { after_upload: Option<AfterUpload> },
     Terminal,
     Run,
-    Update,
 }
 
 fn clean(dir: Option<PathBuf>) -> miette::Result<()> {
@@ -79,51 +79,9 @@ fn clean(dir: Option<PathBuf>) -> miette::Result<()> {
     Ok(())
 }
 
-async fn update(dir: Option<PathBuf>) -> miette::Result<()> {
-    let manifest_path = match dir {
-        Some(dir) => dir.join(MANIFEST_NAME),
-        None => find_manifest(None)?,
-    };
-
-    let manifest_src = tokio::fs::read_to_string(&manifest_path)
-        .await
-        .map_err(CliError::Io)?;
-    let mut doc = manifest_src.parse::<DocumentMut>().into_diagnostic()?;
-    let latest_version = latest_version(&reqwest::Client::new()).await?;
-    let version_string = latest_version.to_string();
-
-    doc["project"]["venice-version"] = Item::Value(Value::String(Formatted::new(version_string)));
-
-    tokio::fs::write(manifest_path, doc.to_string())
-        .await
-        .map_err(CliError::Io)?;
-
-    Ok(())
-}
-
-pub async fn run_cli() -> miette::Result<()> {
-    let cmd = Venice::parse();
-    let _ = runtime::latest_version(&reqwest::Client::new()).await;
-
-    let dir = cmd.dir;
-    match cmd.subcmd {
-        Subcommand::Build => {
-            let _ = build(dir).await?;
-        }
-        Subcommand::Clean => clean(dir)?,
-        Subcommand::Upload { after_upload } => {
-            let _ = upload(dir, after_upload.map(|a| a.into())).await?;
-        }
-        Subcommand::Terminal => terminal(&mut open_connection().await?).await?,
-        Subcommand::Run => run(dir).await?,
-        Subcommand::Update => update(dir).await?,
-    };
-
-    Ok(())
-}
-
 #[pyfunction]
-fn call(args: Vec<String>) -> PyResult<()> {
+#[pyo3(signature = (args, binary_path=None, version=None))]
+fn call(args: Vec<String>, binary_path: Option<String>, version: Option<String>) -> PyResult<()> {
     let rt = Runtime::new().unwrap();
     let result: miette::Result<()> = rt.block_on(async {
         let cmd = Venice::try_parse_from(args);
@@ -134,7 +92,27 @@ fn call(args: Vec<String>) -> PyResult<()> {
             }
         };
 
-        let _ = runtime::latest_version(&reqwest::Client::new()).await;
+        // Determine the runtime source
+        #[cfg(debug_assertions)]
+        let runtime_source: Option<RuntimeSource> = if let Some(raw_binary) = cmd.raw_binary.clone() {
+            // For raw binary mode, use version 0.1.0
+            Some(RuntimeSource::new(raw_binary, semver::Version::new(0, 1, 0)))
+        } else if let (Some(path), Some(ver)) = (binary_path, version) {
+            ver.parse::<semver::Version>()
+                .ok()
+                .map(|v| RuntimeSource::new(PathBuf::from(path), v))
+        } else {
+            None
+        };
+
+        #[cfg(not(debug_assertions))]
+        let runtime_source: Option<RuntimeSource> = if let (Some(path), Some(ver)) = (binary_path, version) {
+            ver.parse::<semver::Version>()
+                .ok()
+                .map(|v| RuntimeSource::new(PathBuf::from(path), v))
+        } else {
+            None
+        };
 
         let dir = cmd.dir;
         match cmd.subcmd {
@@ -143,11 +121,10 @@ fn call(args: Vec<String>) -> PyResult<()> {
             }
             Subcommand::Clean => clean(dir)?,
             Subcommand::Upload { after_upload } => {
-                let _ = upload(dir, after_upload.map(|a| a.into())).await?;
+                let _ = upload(dir, after_upload.map(|a| a.into()), runtime_source).await?;
             }
             Subcommand::Terminal => terminal(&mut open_connection().await?).await?,
-            Subcommand::Run => run(dir).await?,
-            Subcommand::Update => update(dir).await?,
+            Subcommand::Run => run(dir, runtime_source).await?,
         };
         Ok(())
     });

@@ -37,12 +37,9 @@ pub enum CliError {
     #[error("couldn't build `{file}` with `mpy-cross`: {stderr}")]
     Compiler { file: PathBuf, stderr: String },
 
-    #[error(transparent)]
-    Network(#[from] reqwest::Error),
-
-    #[error("home directory could not be found")]
-    HomeDirNotFound,
-
     #[error("couldn't find {MANIFEST_NAME} in current directory or any parent directories")]
     NoManifest,
+
+    #[error("no runtime source provided - ensure the 'venice' package is installed")]
+    NoRuntimeSource,
 }

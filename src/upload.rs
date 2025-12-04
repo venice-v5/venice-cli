@@ -1,6 +1,5 @@
 use std::{path::PathBuf, time::Duration};
 
-use directories::ProjectDirs;
 use indicatif::{ProgressBar, ProgressStyle};
 use tokio::task::spawn_blocking;
 use vex_v5_serial::{
@@ -24,7 +23,7 @@ use crate::{
     build::build,
     errors::CliError,
     manifest::{find_manifest, parse_manifest},
-    runtime::{RtBin, VPT_LOAD_ADDR},
+    runtime::{RuntimeSource, VPT_LOAD_ADDR},
 };
 
 pub async fn open_connection() -> Result<SerialConnection, CliError> {
@@ -98,6 +97,7 @@ fn create_upload_progress_bar(message: &str) -> ProgressBar {
 pub async fn upload(
     dir: Option<PathBuf>,
     after_upload: Option<FileExitAction>,
+    runtime_source: Option<RuntimeSource>,
 ) -> Result<SerialConnection, CliError> {
     let bin_string = FixedString::new(String::from("bin")).unwrap();
 
@@ -112,7 +112,10 @@ pub async fn upload(
         return Err(CliError::SlotOutOfRange);
     }
 
-    let rtbin = RtBin::from_version(manifest.venice_version.parse::<semver::Version>()?);
+    // Get the runtime source or error if none provided
+    let runtime_source = runtime_source.ok_or(CliError::NoRuntimeSource)?;
+    let rtbin = runtime_source.as_rtbin();
+    let runtime_contents = runtime_source.read_binary().await?;
 
     let config = ini_config(
         &manifest.name,
@@ -154,22 +157,13 @@ pub async fn upload(
     .await?;
     ini_pb.finish_with_message("Uploading ini - done");
 
-    // Four-stage process to determine whether the rt should be uploaded:
-    // 1. check if rt is available by trying to fetch it from brain
-    // 2. if it is not available, check if it is available on user's system
-    // 3. if it isn't, download it from github
-    // 4. upload the rt if its not on the brain
+    // Check if the runtime is already on the brain; if not, upload it
     let rtbin_name = FixedString::new(format!("{rtbin}")).unwrap();
     let rt_metadata = brain_file_metadata(&mut conn, rtbin_name.clone()).await?;
 
     let reupload_rt = rt_metadata.is_none();
 
     if reupload_rt {
-        let project_dir =
-            ProjectDirs::from("org", "venice", "venice-cli").ok_or(CliError::HomeDirNotFound)?;
-        let cache_dir = project_dir.cache_dir();
-        let contents = rtbin.fetch(cache_dir).await?;
-
         let rt_pb = create_upload_progress_bar("Uploading runtime");
         let rt_pb_clone = rt_pb.clone();
         conn.execute_command(UploadFile {
@@ -186,7 +180,7 @@ pub async fn upload(
                 },
             },
             vendor: FileVendor::User,
-            data: &contents,
+            data: &runtime_contents,
             target: FileTransferTarget::Qspi,
             // This is the main load address for V5 programs.
             load_address: USER_PROGRAM_LOAD_ADDR,
