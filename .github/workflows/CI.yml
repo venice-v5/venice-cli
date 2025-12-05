@@ -25,9 +25,15 @@ jobs:
             target: ppc64le
     steps:
       - uses: actions/checkout@v4
+
+      # NEW: This step is required for s390x, armv7, ppc64le, etc.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -35,7 +41,7 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: auto
-          # FIXED: Auto-detects apt, yum, or dnf so it works on any manylinux image
+          # Installs the correct arch libs because QEMU ensures we are inside the correct container
           before-script-linux: |
             if command -v apt-get &> /dev/null; then
               apt-get update && apt-get install -y libdbus-1-dev pkg-config libudev-dev
@@ -48,6 +54,7 @@ jobs:
               echo "Could not detect package manager"
               exit 1
             fi
+
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -69,9 +76,15 @@ jobs:
             target: armv7
     steps:
       - uses: actions/checkout@v4
+
+      # NEW: Required for musllinux builds on foreign arches (armv7/aarch64)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -79,7 +92,6 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: musllinux_1_2
-          # FIXED: Explicitly checks for apk (Alpine) or falls back to others
           before-script-linux: |
             if command -v apk &> /dev/null; then
               apk add dbus-dev pkgconf
@@ -89,12 +101,14 @@ jobs:
               echo "Could not detect package manager"
               exit 1
             fi
+
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-musllinux-${{ matrix.platform.target }}
           path: dist
 
+  # ... (Keep windows, macos, and sdist jobs exactly the same)
   windows:
     runs-on: ${{ matrix.platform.runner }}
     strategy:
