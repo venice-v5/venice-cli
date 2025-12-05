@@ -1,0 +1,10 @@
+[project]
+name = "async-await"
+description = "Venice async/await test"
+
+[tool]
+
+[tool.venice]
+slot = 5
+entrypoint = "src"
+

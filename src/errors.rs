@@ -25,20 +25,26 @@ pub enum CliError {
     #[error("radio channel reconnect timeout")]
     RadioChannelReconnectTimeout,
 
-    #[error("invalid version of venice in {MANIFEST_NAME}: {0}")]
+    #[error("invalid version: {0}")]
     InvalidVersion(#[from] semver::Error),
-
-    #[error("unreleased version of venice in {MANIFEST_NAME}")]
-    UnreleasedVersion,
 
     #[error("couldn't parse {MANIFEST_NAME}")]
     Manifest(#[from] toml::de::Error),
+
+    #[error("couldn't parse {MANIFEST_NAME}: {0}")]
+    ManifestEdit(String),
 
     #[error("couldn't build `{file}` with `mpy-cross`: {stderr}")]
     Compiler { file: PathBuf, stderr: String },
 
     #[error("couldn't find {MANIFEST_NAME} in current directory or any parent directories")]
     NoManifest,
+
+    #[error("no project name found - set [project].name or [tool.venice].name in {MANIFEST_NAME}")]
+    NoProjectName,
+
+    #[error("no entrypoint found at `{0}` - expected main.py or __init__.py")]
+    NoEntrypoint(PathBuf),
 
     #[error("no runtime source provided - ensure the 'venice' package is installed")]
     NoRuntimeSource,

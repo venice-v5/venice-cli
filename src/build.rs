@@ -8,7 +8,7 @@ use std::{
 use venice_program_table::{ProgramBuilder, VptBuilder};
 
 use crate::{
-    BUILD_DIR, SRC_DIR, TABLE_FILE, VENDOR_ID,
+    BUILD_DIR, TABLE_FILE, VENDOR_ID,
     errors::CliError,
     manifest::{find_manifest, parse_manifest},
 };
@@ -17,11 +17,13 @@ pub const SRC_EXT: &str = "py";
 pub const BUILD_EXT: &str = "mpy";
 
 pub const PACKAGE_INIT_NAME: &[u8] = b"__init__";
+pub const MAIN_NAME: &[u8] = b"main";
 pub const PYTHON_MOD_SEP: u8 = b'.';
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct SrcModule {
     name: OsString,
+    is_main: bool,
 }
 
 impl SrcModule {
@@ -31,10 +33,16 @@ impl SrcModule {
             .with_file_name(dir_stripped.file_stem().unwrap())
             .into_os_string();
 
-        Self { name: ext_stripped }
+        let is_main = ext_stripped.as_encoded_bytes() == MAIN_NAME;
+
+        Self { name: ext_stripped, is_main }
     }
 
     pub fn python_name(&self, package_name: &[u8]) -> Vec<u8> {
+        if self.is_main {
+            return package_name.to_vec();
+        }
+
         let mut python_name = Vec::new();
         python_name.extend_from_slice(package_name);
 
@@ -61,6 +69,11 @@ impl SrcModule {
     }
 
     pub fn module_flags(&self) -> u8 {
+        // Main module gets special flag (entry point)
+        if self.is_main {
+            return 0b01;
+        }
+
         0b01 | if self.name.as_encoded_bytes().ends_with(PACKAGE_INIT_NAME) {
             0b10
         } else {
@@ -93,24 +106,44 @@ impl SrcModule {
     }
 }
 
-// TODO: refactor
+/// Find modules starting from entrypoint directory.
+/// For root: looks for main.py first, then __init__.py.
+/// For subdirectories: only __init__.py marks a package.
 async fn find_modules_inner(
     src_dir: &Path,
     dir: &Path,
     modules: &mut Vec<SrcModule>,
-) -> Result<(), std::io::Error> {
-    if !tokio::fs::try_exists(dir.join("__init__.py")).await? {
+    is_root: bool,
+) -> Result<(), CliError> {
+    // Check if this directory is a valid package
+    let has_init = tokio::fs::try_exists(dir.join("__init__.py")).await.map_err(CliError::Io)?;
+    let has_main = is_root && tokio::fs::try_exists(dir.join("main.py")).await.map_err(CliError::Io)?;
+
+    if !has_init && !has_main {
+        // For root, we need either main.py or __init__.py
+        // For subdirs, we need __init__.py to be a package
+        if is_root {
+            return Err(CliError::NoEntrypoint(dir.to_path_buf()));
+        }
         return Ok(());
     }
 
-    let mut read_dir = tokio::fs::read_dir(dir).await?;
-    while let Some(entry) = read_dir.next_entry().await? {
+    let mut read_dir = tokio::fs::read_dir(dir).await.map_err(CliError::Io)?;
+    while let Some(entry) = read_dir.next_entry().await.map_err(CliError::Io)? {
         let path = entry.path();
 
-        let file_type = entry.file_type().await?;
+        let file_type = entry.file_type().await.map_err(CliError::Io)?;
         if file_type.is_dir() {
-            Box::pin(find_modules_inner(src_dir, &path, modules)).await?;
+            // Recurse into subdirectories (not root anymore)
+            Box::pin(find_modules_inner(src_dir, &path, modules, false)).await?;
         } else if path.extension() == Some(OsStr::new(SRC_EXT)) {
+            let filename = path.file_stem().and_then(|s| s.to_str());
+
+            // Skip main.py in subdirectories (only valid at root)
+            if !is_root && filename == Some("main") {
+                continue;
+            }
+
             modules.push(SrcModule::from_path(&path, src_dir));
         }
     }
@@ -118,9 +151,9 @@ async fn find_modules_inner(
     Ok(())
 }
 
-pub async fn find_modules(src_dir: &Path) -> Result<Vec<SrcModule>, std::io::Error> {
+pub async fn find_modules(src_dir: &Path) -> Result<Vec<SrcModule>, CliError> {
     let mut modules = Vec::new();
-    find_modules_inner(src_dir, src_dir, &mut modules).await?;
+    find_modules_inner(src_dir, src_dir, &mut modules, true).await?;
     Ok(modules)
 }
 
@@ -164,7 +197,9 @@ pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
         .as_deref()
         .unwrap_or_else(|| manifest_path.parent().unwrap());
 
-    let src_dir = manifest_dir.join(SRC_DIR);
+    // Use entrypoint from manifest instead of hardcoded src/
+    let entrypoint = manifest.entrypoint.ok_or(CliError::NoEntrypoint(PathBuf::from("missing")))?;
+    let src_dir = manifest_dir.join(entrypoint);
     let build_dir = manifest_dir.join(BUILD_DIR);
 
     let modules = find_modules(&src_dir).await?;

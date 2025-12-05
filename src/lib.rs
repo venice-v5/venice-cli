@@ -1,5 +1,4 @@
 pub const VENDOR_ID: u32 = 0x11235813;
-pub const SRC_DIR: &str = "src";
 pub const BUILD_DIR: &str = "build";
 pub const TABLE_FILE: &str = "out.vpt";
 
@@ -15,11 +14,12 @@ use clap::Parser;
 use pyo3::prelude::*;
 use tokio::runtime::Runtime;
 
+
 use std::path::PathBuf;
 
 use build::build;
 use errors::CliError;
-use manifest::find_manifest;
+use manifest::{find_manifest, parse_manifest, prompt_for_slot, prompt_for_entrypoint, update_missing_config};
 use run::run;
 use terminal::terminal;
 use upload::{open_connection, upload};
@@ -79,6 +79,39 @@ fn clean(dir: Option<PathBuf>) -> miette::Result<()> {
     Ok(())
 }
 
+async fn ensure_project_config(dir: Option<PathBuf>) -> Result<(PathBuf, PathBuf), CliError> {
+    let manifest_path = find_manifest(dir.as_deref())?;
+    let project_dir = dir
+        .as_deref()
+        .unwrap_or_else(|| manifest_path.parent().unwrap());
+    
+    // Parse current manifest
+    let project = parse_manifest(&manifest_path).await?;
+    
+    let mut needs_update = false;
+    let mut slot_to_add = None;
+    let mut entrypoint_to_add = None;
+    
+    // Check if slot is missing
+    if project.slot.is_none() {
+        slot_to_add = Some(prompt_for_slot()?);
+        needs_update = true;
+    }
+    
+    // Check if entrypoint is missing
+    if project.entrypoint.is_none() {
+        entrypoint_to_add = Some(prompt_for_entrypoint(project_dir)?);
+        needs_update = true;
+    }
+    
+    // Update manifest if needed
+    if needs_update {
+        update_missing_config(&manifest_path, slot_to_add, entrypoint_to_add).await?;
+    }
+    
+    Ok((manifest_path.to_path_buf(), project_dir.to_path_buf()))
+}
+
 #[pyfunction]
 #[pyo3(signature = (args, binary_path=None, version=None))]
 fn call(args: Vec<String>, binary_path: Option<String>, version: Option<String>) -> PyResult<()> {
@@ -117,14 +150,19 @@ fn call(args: Vec<String>, binary_path: Option<String>, version: Option<String>)
         let dir = cmd.dir;
         match cmd.subcmd {
             Subcommand::Build => {
+                let _ = ensure_project_config(dir.clone()).await?;
                 let _ = build(dir).await?;
             }
             Subcommand::Clean => clean(dir)?,
             Subcommand::Upload { after_upload } => {
+                let _ = ensure_project_config(dir.clone()).await?;
                 let _ = upload(dir, after_upload.map(|a| a.into()), runtime_source).await?;
             }
             Subcommand::Terminal => terminal(&mut open_connection().await?).await?,
-            Subcommand::Run => run(dir, runtime_source).await?,
+            Subcommand::Run => {
+                let _ = ensure_project_config(dir.clone()).await?;
+                let _ = run(dir, runtime_source).await?;
+            }
         };
         Ok(())
     });

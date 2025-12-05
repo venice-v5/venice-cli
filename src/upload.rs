@@ -108,8 +108,12 @@ pub async fn upload(
     let manifest_path = find_manifest(dir.as_deref())?;
     let manifest = parse_manifest(&manifest_path).await?;
 
-    if !(1..=8).contains(&manifest.slot) {
-        return Err(CliError::SlotOutOfRange);
+    if let Some(slot) = manifest.slot {
+        if !(1..=8).contains(&slot) {
+            return Err(CliError::SlotOutOfRange);
+        }
+    } else {
+        return Err(CliError::SlotOutOfRange); // This shouldn't happen if ensure_project_config worked
     }
 
     // Get the runtime source or error if none provided
@@ -119,13 +123,13 @@ pub async fn upload(
 
     let config = ini_config(
         &manifest.name,
-        manifest.slot - 1,
+        manifest.slot.unwrap_or(1), // Default to 1 if somehow missing
         manifest.icon as u16,
         manifest.description.as_deref().unwrap_or("Made in Heaven!"),
     );
 
     let mut conn = conn_task.await.unwrap()?;
-    let ini_name = FixedString::new(format!("slot_{}.ini", manifest.slot)).unwrap();
+    let ini_name = FixedString::new(format!("slot_{}.ini", manifest.slot.unwrap_or(1))).unwrap();
 
     let ini_pb = create_upload_progress_bar("Uploading ini");
     let ini_pb_clone = ini_pb.clone();
@@ -200,7 +204,7 @@ pub async fn upload(
     let vpt_pb_clone = vpt_pb.clone();
     conn.execute_command(UploadFile {
         // It's not technically a binary, but I believe it must still be named this way.
-        file_name: FixedString::new(format!("slot_{}.bin", manifest.slot)).unwrap(),
+        file_name: FixedString::new(format!("slot_{}.bin", manifest.slot.unwrap_or(1))).unwrap(),
         metadata: FileMetadata {
             extension: bin_string.clone(),
             extension_type: ExtensionType::Binary,

@@ -9,7 +9,7 @@ classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
-dependencies = ["venice"]
+dependencies = []  # "venice" will be added once the package exists
 dynamic = ["version"]
 
 [project.scripts]

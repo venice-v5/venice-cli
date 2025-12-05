@@ -1,0 +1,7 @@
+[project]
+name = "venice-stress-test"
+description = "Venice runtime stress test"
+
+[tool.venice]
+slot = 3
+entrypoint = "src"
