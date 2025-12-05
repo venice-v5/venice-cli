@@ -38,6 +38,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
+          PKG_CONFIG_ALLOW_CROSS: 1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
