@@ -41,7 +41,7 @@ jobs:
             target: ${{ matrix.platform.target }}
             # 👈 FIXED: Added '--env PKG_CONFIG_ALLOW_CROSS' to args
             # This forces maturin to pass the variable from the Runner into the Docker Container
-            args: --release --out dist --find-interpreter --env PKG_CONFIG_ALLOW_CROSS
+            args: --release --out dist --find-interpreter
             sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
             manylinux: auto
             before-script-linux: |
