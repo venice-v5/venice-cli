@@ -48,8 +48,6 @@ impl SrcModule {
             python_name.truncate(python_name.len() - b".__init__".len());
         }
 
-        dbg!(String::from_utf8(python_name.clone()));
-
         Ok(python_name)
     }
 
@@ -149,12 +147,14 @@ pub async fn build_modules(
 
         let build_path = module.build_path(build_dir);
         tokio::fs::create_dir_all(build_path.parent().unwrap()).await?;
+        let mut name = module.name.clone();
+        name.push(".py");
         let output = std::process::Command::new("mpy-cross")
             .arg(&src_path)
             .arg("-o")
             .arg(build_path)
             .arg("-s")
-            .arg("test")
+            .arg(name)
             .stdin(Stdio::null())
             .output();
 
