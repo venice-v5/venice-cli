@@ -93,9 +93,7 @@ async fn find_modules_inner(
 ) -> Result<(), CliError> {
     let has_init = tokio::fs::try_exists(dir.join("__init__.py")).await.map_err(CliError::Io)?;
     let has_main = tokio::fs::try_exists(dir.join("main.py")).await.map_err(CliError::Io)?;
-    // dbg!(has_init, has_main, is_root, dir);
     if is_root && !has_main {
-        // dbg!(dir.join("main.py"));
         // For root, we need main.py
         return Err(CliError::NoEntrypoint(dir.to_path_buf()));
     }
@@ -109,9 +107,7 @@ async fn find_modules_inner(
         let path = entry.path();
 
         let file_type = entry.file_type().await.map_err(CliError::Io)?;
-        // dbg!(&path, &file_type);
         if file_type.is_dir() {
-            // dbg!(&path);
             // Recurse into subdirectories (not root anymore)
             Box::pin(find_modules_inner(src_dir, &path, modules, false)).await?;
         } else if path.extension() == Some(OsStr::new(SRC_EXT)) {
