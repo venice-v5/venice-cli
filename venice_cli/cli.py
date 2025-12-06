@@ -1,20 +1,19 @@
 from venice_cli._core import call
 import sys
+import mpy_cross
 
 def main():
-    # Try to import venice package to get runtime binary path and version
     binary_path = None
     version = None
-    
+
     try:
-        import venice
+        import venice  # pyright: ignore[reportMissingImports]
         binary_path = venice._dangerous_DO_NOT_TOUCH_YOU_WILL_GET_ELECTROCUTED_get_binary_path()
         version = venice._dangerous_DO_NOT_TOUCH_YOU_WILL_GET_ELECTROCUTED_get_version()
     except (ImportError, AttributeError):
-        # venice package not installed or doesn't have the required functions
         pass
-    
-    result = call(sys.argv, binary_path, version)
+
+    call(sys.argv, binary_path, version, mpy_cross.mpy_cross)
 
 
 if __name__ == "__main__":

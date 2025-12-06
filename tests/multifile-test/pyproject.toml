@@ -2,8 +2,8 @@
 name = "multifile-test"
 description = "Venice multifile CBOR test"
 version="0.1.0"
+
 [tool]
 
 [tool.venice]
-slot = 1
-entrypoint = "."
+slot = 3

@@ -8,9 +8,7 @@ use std::{
 use venice_program_table::{ModuleFlags, VptBuilder};
 
 use crate::{
-    BUILD_DIR, TABLE_FILE,
-    errors::CliError,
-    manifest::{find_manifest, parse_manifest},
+    BUILD_DIR, MPY_CROSS_PATH, TABLE_FILE, errors::CliError, manifest::{find_manifest, parse_manifest}
 };
 
 pub const SRC_EXT: &str = "py";
@@ -149,7 +147,7 @@ pub async fn build_modules(
         tokio::fs::create_dir_all(build_path.parent().unwrap()).await?;
         let mut name = module.name.clone();
         name.push(".py");
-        let output = std::process::Command::new("mpy-cross")
+        let output = std::process::Command::new(MPY_CROSS_PATH.get().unwrap())
             .arg(&src_path)
             .arg("-o")
             .arg(build_path)
@@ -178,9 +176,7 @@ pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
         .as_deref()
         .unwrap_or_else(|| manifest_path.parent().unwrap());
 
-    // Use entrypoint from manifest instead of hardcoded src/
-    let entrypoint = manifest.entrypoint.ok_or(CliError::NoEntrypoint(PathBuf::from("missing")))?;
-    let src_dir = manifest_dir.join(entrypoint);
+    let src_dir = manifest_dir;
     let build_dir = manifest_dir.join(BUILD_DIR);
 
     let modules = find_modules(&src_dir).await?;
@@ -194,7 +190,6 @@ pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
 
     let mut vpt_builder = VptBuilder::new();
 
-    let package_name = manifest.name.as_bytes();
 
     vpt_builder.entrypoint("main".to_owned());
 

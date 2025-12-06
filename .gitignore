@@ -70,3 +70,6 @@ docs/_build/
 
 # Pyenv
 .python-version
+
+# surprisingly, we actually ignore lockfiles since we aren't building the "traditional" way.
+uv.lock
