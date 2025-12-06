@@ -25,6 +25,5 @@ toml = "0.9.5"
 toml_edit = "0.23.7"
 
 [dependencies.venice-program-table]
-git = "https://github.com/venice-v5/venice-program-table.git"
-rev = "2fa8d392bb45a7b69e93f5a7e668ad4bca18007d"
+path = "../venice-program-table"
 features = ["builder"]

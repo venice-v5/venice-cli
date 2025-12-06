@@ -5,10 +5,10 @@ use std::{
     time::SystemTime,
 };
 
-use venice_program_table::{ProgramBuilder, VptBuilder};
+use venice_program_table::{ModuleFlags, VptBuilder};
 
 use crate::{
-    BUILD_DIR, TABLE_FILE, VENDOR_ID,
+    BUILD_DIR, TABLE_FILE,
     errors::CliError,
     manifest::{find_manifest, parse_manifest},
 };
@@ -16,14 +16,11 @@ use crate::{
 pub const SRC_EXT: &str = "py";
 pub const BUILD_EXT: &str = "mpy";
 
-pub const PACKAGE_INIT_NAME: &[u8] = b"__init__";
-pub const MAIN_NAME: &[u8] = b"main";
 pub const PYTHON_MOD_SEP: u8 = b'.';
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct SrcModule {
     name: OsString,
-    is_main: bool,
 }
 
 impl SrcModule {
@@ -33,27 +30,11 @@ impl SrcModule {
             .with_file_name(dir_stripped.file_stem().unwrap())
             .into_os_string();
 
-        let is_main = ext_stripped.as_encoded_bytes() == MAIN_NAME;
-
-        Self { name: ext_stripped, is_main }
+        Self { name: ext_stripped }
     }
 
-    pub fn python_name(&self, package_name: &[u8]) -> Vec<u8> {
-        if self.is_main {
-            return package_name.to_vec();
-        }
-
-        let mut python_name = Vec::new();
-        python_name.extend_from_slice(package_name);
-
-        let mut name_bytes = self.name.as_encoded_bytes();
-        python_name.push(b'.');
-
-        if name_bytes.ends_with(PACKAGE_INIT_NAME) {
-            name_bytes = &name_bytes[..name_bytes.len() - PACKAGE_INIT_NAME.len()];
-        }
-
-        python_name.extend_from_slice(name_bytes);
+    pub fn python_name(&self) -> Result<Vec<u8>, CliError> {
+        let mut python_name = self.name.clone().into_encoded_bytes();
 
         for c in python_name.iter_mut() {
             if *c as char == std::path::MAIN_SEPARATOR {
@@ -61,23 +42,22 @@ impl SrcModule {
             }
         }
 
-        if python_name.ends_with(&[PYTHON_MOD_SEP]) {
-            python_name.pop();
+        if python_name == b"__init__" {
+            return Err(CliError::TopLevelInit);
+        } else if python_name.ends_with(b".__init__") {
+            python_name.truncate(python_name.len() - b".__init__".len());
         }
 
-        python_name
+        dbg!(String::from_utf8(python_name.clone()));
+
+        Ok(python_name)
     }
 
-    pub fn module_flags(&self) -> u8 {
-        // Main module gets special flag (entry point)
-        if self.is_main {
-            return 0b01;
-        }
-
-        0b01 | if self.name.as_encoded_bytes().ends_with(PACKAGE_INIT_NAME) {
-            0b10
+    pub fn module_flags(&self) -> ModuleFlags {
+        if self.name.as_encoded_bytes().ends_with(b"__init__") {
+            ModuleFlags::Package
         } else {
-            0b00
+            ModuleFlags::Module
         }
     }
 
@@ -115,16 +95,16 @@ async fn find_modules_inner(
     modules: &mut Vec<SrcModule>,
     is_root: bool,
 ) -> Result<(), CliError> {
-    // Check if this directory is a valid package
     let has_init = tokio::fs::try_exists(dir.join("__init__.py")).await.map_err(CliError::Io)?;
-    let has_main = is_root && tokio::fs::try_exists(dir.join("main.py")).await.map_err(CliError::Io)?;
-
-    if !has_init && !has_main {
-        // For root, we need either main.py or __init__.py
+    let has_main = tokio::fs::try_exists(dir.join("main.py")).await.map_err(CliError::Io)?;
+    // dbg!(has_init, has_main, is_root, dir);
+    if is_root && !has_main {
+        // dbg!(dir.join("main.py"));
+        // For root, we need main.py
+        return Err(CliError::NoEntrypoint(dir.to_path_buf()));
+    }
+    else if !is_root && !has_init {
         // For subdirs, we need __init__.py to be a package
-        if is_root {
-            return Err(CliError::NoEntrypoint(dir.to_path_buf()));
-        }
         return Ok(());
     }
 
@@ -133,7 +113,9 @@ async fn find_modules_inner(
         let path = entry.path();
 
         let file_type = entry.file_type().await.map_err(CliError::Io)?;
+        // dbg!(&path, &file_type);
         if file_type.is_dir() {
+            // dbg!(&path);
             // Recurse into subdirectories (not root anymore)
             Box::pin(find_modules_inner(src_dir, &path, modules, false)).await?;
         } else if path.extension() == Some(OsStr::new(SRC_EXT)) {
@@ -167,11 +149,12 @@ pub async fn build_modules(
 
         let build_path = module.build_path(build_dir);
         tokio::fs::create_dir_all(build_path.parent().unwrap()).await?;
-
         let output = std::process::Command::new("mpy-cross")
             .arg(&src_path)
             .arg("-o")
             .arg(build_path)
+            .arg("-s")
+            .arg("test")
             .stdin(Stdio::null())
             .output();
 
@@ -187,8 +170,6 @@ pub async fn build_modules(
 
     Ok(())
 }
-
-const VENICE_PACKAGE_NAME_PROGRAM: &[u8] = b"__venice__package_name__";
 
 pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
     let manifest_path = find_manifest(dir.as_deref())?;
@@ -211,30 +192,31 @@ pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
     let table_path = build_dir.join(TABLE_FILE);
     build_modules(&src_dir, &build_dir, &modules).await?;
 
-    let mut vpt_builder = VptBuilder::new(VENDOR_ID);
+    let mut vpt_builder = VptBuilder::new();
 
     let package_name = manifest.name.as_bytes();
 
-    let mut package_name_payload = vec![0];
-    package_name_payload.extend_from_slice(package_name);
-    vpt_builder.add_program(ProgramBuilder {
-        name: VENICE_PACKAGE_NAME_PROGRAM.to_vec(),
-        payload: package_name_payload,
-    });
+    vpt_builder.entrypoint("main".to_owned());
 
     for module in modules.iter() {
         let build_path = module.build_path(&build_dir);
+        let bytecode = tokio::fs::read(&build_path).await?;
+        let module_name = String::from_utf8_lossy(&module.python_name()?).into_owned();
+        let flags = module.module_flags();
 
-        let mut payload = tokio::fs::read(&build_path).await?;
-        payload.insert(0, module.module_flags());
-
-        vpt_builder.add_program(ProgramBuilder {
-            name: module.python_name(package_name),
-            payload,
-        });
+        vpt_builder.add_module(module_name, bytecode, flags);
     }
 
-    let bytes = vpt_builder.build();
+    let vpt = vpt_builder.build().map_err(|e| CliError::Io(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        format!("Failed to build VPT: {}", e),
+    )))?;
+
+    let bytes = vpt.to_bytes().map_err(|e| CliError::Io(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        format!("Failed to encode VPT: {}", e),
+    )))?;
+
     tokio::fs::write(&table_path, &bytes).await?;
     Ok(bytes)
 }

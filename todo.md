@@ -1,0 +1,2 @@
+- [ ] clawd🦀 refactor this + venice to use CBOR
+- [ ] clawd🦀 refactor this to use Python to access mpy-cross

@@ -43,8 +43,11 @@ pub enum CliError {
     #[error("no project name found - set [project].name or [tool.venice].name in {MANIFEST_NAME}")]
     NoProjectName,
 
-    #[error("no entrypoint found at `{0}` - expected main.py or __init__.py")]
+    #[error("no entrypoint found in `{0}` - expected main.py")]
     NoEntrypoint(PathBuf),
+
+    #[error("found top-level __init__.py in source root. the device root is not a package, so this file will never execute; please move initialization code to main.py")]
+    TopLevelInit,
 
     #[error("no runtime source provided - ensure the 'venice' package is installed")]
     NoRuntimeSource,
