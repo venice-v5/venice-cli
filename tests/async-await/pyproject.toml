@@ -5,6 +5,5 @@ description = "Venice async/await test"
 [tool]
 
 [tool.venice]
-slot = 5
+slot = 1
 entrypoint = "src"
-

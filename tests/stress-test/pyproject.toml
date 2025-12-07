@@ -1,7 +1,7 @@
 [project]
 name = "venice-stress-test"
 description = "Venice runtime stress test"
+version = "0.1.0"
 
 [tool.venice]
-slot = 3
-entrypoint = "src"
+slot = 1

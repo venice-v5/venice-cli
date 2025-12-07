@@ -31,3 +31,14 @@ print("Finished.")
 print("Fibonacci(100000) last 6 digits:", fib_result % 1_000_000)
 print("Total primes under 100000:", prime_count)
 print("Sum of matrix elements:", matrix_sum)
+
+
+"""
+Expected output:
+
+    Starting runtime stress test...
+    Finished.
+    Fibonacci(100000) last 6 digits: 746875
+    Total primes under 100000: 9592
+    Sum of matrix elements: 1881249
+"""
