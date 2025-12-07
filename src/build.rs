@@ -5,10 +5,10 @@ use std::{
     time::SystemTime,
 };
 
-use venice_program_table::{ModuleFlags, VptBuilder};
+use venice_program_table::{ProgramBuilder, ProgramFlags, VptBuilder};
 
 use crate::{
-    BUILD_DIR, MPY_CROSS_PATH, TABLE_FILE, errors::CliError, manifest::{find_manifest, parse_manifest}
+    BUILD_DIR, MPY_CROSS_PATH, TABLE_FILE, VENDOR_ID, errors::CliError, manifest::{find_manifest, parse_manifest}
 };
 
 pub const SRC_EXT: &str = "py";
@@ -49,11 +49,11 @@ impl SrcModule {
         Ok(python_name)
     }
 
-    pub fn module_flags(&self) -> ModuleFlags {
+    pub fn module_flags(&self) -> ProgramFlags {
         if self.name.as_encoded_bytes().ends_with(b"__init__") {
-            ModuleFlags::Package
+            ProgramFlags::IS_PACKAGE
         } else {
-            ModuleFlags::Module
+            ProgramFlags::empty()
         }
     }
 
@@ -108,12 +108,10 @@ async fn find_modules_inner(
 
         let file_type = entry.file_type().await.map_err(CliError::Io)?;
         if file_type.is_dir() {
-            // Recurse into subdirectories (not root anymore)
             Box::pin(find_modules_inner(src_dir, &path, modules, false)).await?;
         } else if path.extension() == Some(OsStr::new(SRC_EXT)) {
             let filename = path.file_stem().and_then(|s| s.to_str());
 
-            // Skip main.py in subdirectories (only valid at root)
             if !is_root && filename == Some("main") {
                 continue;
             }
@@ -184,30 +182,22 @@ pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
     let table_path = build_dir.join(TABLE_FILE);
     build_modules(&src_dir, &build_dir, &modules).await?;
 
-    let mut vpt_builder = VptBuilder::new();
-
-
-    vpt_builder.entrypoint("main".to_owned());
+    let mut vpt_builder = VptBuilder::new(VENDOR_ID);
 
     for module in modules.iter() {
         let build_path = module.build_path(&build_dir);
         let bytecode = tokio::fs::read(&build_path).await?;
         let module_name = String::from_utf8_lossy(&module.python_name()?).into_owned();
-        let flags = module.module_flags();
 
-        vpt_builder.add_module(module_name, bytecode, flags);
+        vpt_builder.add_program(ProgramBuilder {
+            name: module_name.into_bytes(),
+            payload: bytecode,
+            flags: module.module_flags()
+        });
     }
 
-    let vpt = vpt_builder.build().map_err(|e| CliError::Io(std::io::Error::new(
-        std::io::ErrorKind::InvalidData,
-        format!("Failed to build VPT: {}", e),
-    )))?;
+    let vpt = vpt_builder.build();
 
-    let bytes = vpt.to_bytes().map_err(|e| CliError::Io(std::io::Error::new(
-        std::io::ErrorKind::InvalidData,
-        format!("Failed to encode VPT: {}", e),
-    )))?;
-
-    tokio::fs::write(&table_path, &bytes).await?;
-    Ok(bytes)
+    tokio::fs::write(&table_path, &vpt).await?;
+    Ok(vpt)
 }
