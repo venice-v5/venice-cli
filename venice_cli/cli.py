@@ -13,7 +13,7 @@ def main():
     except (ImportError, AttributeError):
         pass
 
-    call(sys.argv, binary_path, version, mpy_cross.mpy_cross)
+    call(sys.argv, str(binary_path), version, mpy_cross.mpy_cross)
 
 
 if __name__ == "__main__":
