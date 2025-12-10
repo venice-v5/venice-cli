@@ -18,6 +18,9 @@ pub async fn terminal(conn: &mut SerialConnection) -> Result<(), CliError> {
 
     loop {
         tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                return Ok(());
+            }
             input_size = stdin.read(&mut input_buf) => {
                 if let Ok(size) = input_size {
                     conn.write_user(&input_buf[..size]).await?;
