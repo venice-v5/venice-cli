@@ -4,6 +4,4 @@ description = "Venice multifile CBOR test"
 version="0.1.0"
 
 [tool]
-
-[tool.venice]
-slot = 1
+venice = { slot = 1 }
