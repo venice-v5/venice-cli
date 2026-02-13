@@ -6,7 +6,6 @@ pub const TABLE_FILE: &str = "out.vpt";
 pub mod build;
 pub mod errors;
 pub mod manifest;
-pub mod run;
 pub mod runtime;
 pub mod terminal;
 pub mod upload;
@@ -15,16 +14,14 @@ use clap::Parser;
 use pyo3::prelude::*;
 use tokio::runtime::Runtime;
 
-
 use std::{path::PathBuf, sync::OnceLock};
 
 use build::build;
 use errors::CliError;
 use manifest::{find_manifest, parse_manifest, prompt_for_slot, update_missing_config};
-use run::run;
+use runtime::RuntimeSource;
 use terminal::terminal;
 use upload::{open_connection, upload};
-use runtime::RuntimeSource;
 
 use vex_v5_serial::protocol::cdc2::file::FileExitAction;
 
@@ -64,9 +61,15 @@ struct Venice {
 enum Subcommand {
     Build,
     Clean,
-    Upload { after_upload: Option<AfterUpload> },
+    Upload {
+        after_upload: Option<AfterUpload>,
+        #[arg(long, short, action = clap::ArgAction::SetTrue)]
+        cold: bool,
+    },
     Terminal,
-    Run,
+    Run {
+        cold: bool,
+    },
 }
 
 fn clean(dir: Option<PathBuf>) -> miette::Result<()> {
@@ -110,10 +113,17 @@ static MPY_CROSS_PATH: OnceLock<String> = OnceLock::new();
 
 #[pyfunction]
 #[pyo3(signature = (args, binary_path, version, mpy_cross))]
-fn call(args: Vec<String>, binary_path: Option<String>, version: Option<String>, mpy_cross: Option<String>) -> PyResult<()> {
+fn call(
+    args: Vec<String>,
+    binary_path: Option<String>,
+    version: Option<String>,
+    mpy_cross: Option<String>,
+) -> PyResult<()> {
     let rt = Runtime::new().unwrap();
     let result: miette::Result<()> = rt.block_on(async {
-        MPY_CROSS_PATH.set(mpy_cross.unwrap_or_else(|| "mpy-cross".to_string())).unwrap();
+        MPY_CROSS_PATH
+            .set(mpy_cross.unwrap_or_else(|| "mpy-cross".to_string()))
+            .unwrap();
 
         let cmd = Venice::try_parse_from(args);
         let cmd = match cmd {
@@ -125,9 +135,12 @@ fn call(args: Vec<String>, binary_path: Option<String>, version: Option<String>,
 
         // Determine the runtime source
         #[cfg(debug_assertions)]
-        let runtime_source: Option<RuntimeSource> = if let Some(raw_binary) = cmd.raw_binary.clone() {
-            // For raw binary mode, use version 0.1.0
-            Some(RuntimeSource::new(raw_binary, semver::Version::new(0, 1, 0)))
+        let runtime_source: Option<RuntimeSource> = if let Some(raw_binary) = cmd.raw_binary.clone()
+        {
+            Some(RuntimeSource::new(
+                raw_binary,
+                semver::Version::new(0, 1, 0),
+            ))
         } else if let (Some(path), Some(ver)) = (binary_path, version) {
             ver.parse::<semver::Version>()
                 .ok()
@@ -137,13 +150,14 @@ fn call(args: Vec<String>, binary_path: Option<String>, version: Option<String>,
         };
 
         #[cfg(not(debug_assertions))]
-        let runtime_source: Option<RuntimeSource> = if let (Some(path), Some(ver)) = (binary_path, version) {
-            ver.parse::<semver::Version>()
-                .ok()
-                .map(|v| RuntimeSource::new(PathBuf::from(path), v))
-        } else {
-            None
-        };
+        let runtime_source: Option<RuntimeSource> =
+            if let (Some(path), Some(ver)) = (binary_path, version) {
+                ver.parse::<semver::Version>()
+                    .ok()
+                    .map(|v| RuntimeSource::new(PathBuf::from(path), v))
+            } else {
+                None
+            };
 
         let dir = cmd.dir;
         match cmd.subcmd {
@@ -152,14 +166,16 @@ fn call(args: Vec<String>, binary_path: Option<String>, version: Option<String>,
                 let _ = build(dir).await?;
             }
             Subcommand::Clean => clean(dir)?,
-            Subcommand::Upload { after_upload } => {
+            Subcommand::Upload { after_upload, cold } => {
                 let _ = ensure_project_config(dir.clone()).await?;
-                let _ = upload(dir, after_upload.map(|a| a.into()), runtime_source).await?;
+                let _ = upload(dir, after_upload.map(|a| a.into()), runtime_source, cold).await?;
             }
             Subcommand::Terminal => terminal(&mut open_connection().await?).await?,
-            Subcommand::Run => {
+            Subcommand::Run { cold } => {
                 let _ = ensure_project_config(dir.clone()).await?;
-                let _ = run(dir, runtime_source).await?;
+                let mut conn =
+                    upload(dir, Some(FileExitAction::RunProgram), runtime_source, cold).await?;
+                terminal(&mut conn).await?;
             }
         };
         Ok(())

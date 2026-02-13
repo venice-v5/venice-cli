@@ -1,6 +1,7 @@
 use std::{path::PathBuf, time::Duration};
 
 use indicatif::{ProgressBar, ProgressStyle};
+use flate2::{Compression, GzBuilder};
 use tokio::task::spawn_blocking;
 use vex_v5_serial::{
     Connection,
@@ -37,6 +38,12 @@ pub async fn open_connection() -> Result<SerialConnection, CliError> {
     })
     .await
     .unwrap()
+}
+
+fn gzip_compress(data: &mut Vec<u8>) {
+    let mut encoder = GzBuilder::new().write(Vec::new(), Compression::best());
+    encoder.write_all(data).unwrap();
+    *data = encoder.finish().unwrap();
 }
 
 /// # Errors
@@ -98,6 +105,7 @@ pub async fn upload(
     dir: Option<PathBuf>,
     after_upload: Option<FileExitAction>,
     runtime_source: Option<RuntimeSource>,
+    force_reupload_runtime: bool
 ) -> Result<SerialConnection, CliError> {
     let bin_string = FixedString::new(String::from("bin")).unwrap();
 
@@ -119,7 +127,9 @@ pub async fn upload(
     // Get the runtime source or error if none provided
     let runtime_source = runtime_source.ok_or(CliError::NoRuntimeSource)?;
     let rtbin = runtime_source.as_rtbin();
-    let runtime_contents = runtime_source.read_binary().await?;
+    let mut runtime_contents = runtime_source.read_binary().await?;
+    // <https://media1.tenor.com/m/cjSTJh8J3QcAAAAd/cat-cat-sink.gif>
+    gzip_compress(&mut runtime_contents);
 
     let config = ini_config(
         &manifest.name,
@@ -166,7 +176,7 @@ pub async fn upload(
     let rt_metadata = brain_file_metadata(&mut conn, rtbin_name.clone()).await?;
 
     let reupload_rt = rt_metadata.is_none();
-
+    
     if reupload_rt {
         let rt_pb = create_upload_progress_bar("Uploading runtime");
         let rt_pb_clone = rt_pb.clone();
