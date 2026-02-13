@@ -1,7 +1,8 @@
+use std::io::Write;
 use std::{path::PathBuf, time::Duration};
 
-use indicatif::{ProgressBar, ProgressStyle};
 use flate2::{Compression, GzBuilder};
+use indicatif::{ProgressBar, ProgressStyle};
 use tokio::task::spawn_blocking;
 use vex_v5_serial::{
     Connection,
@@ -105,7 +106,7 @@ pub async fn upload(
     dir: Option<PathBuf>,
     after_upload: Option<FileExitAction>,
     runtime_source: Option<RuntimeSource>,
-    force_reupload_runtime: bool
+    force_reupload_runtime: bool,
 ) -> Result<SerialConnection, CliError> {
     let bin_string = FixedString::new(String::from("bin")).unwrap();
 
@@ -176,7 +177,7 @@ pub async fn upload(
     let rt_metadata = brain_file_metadata(&mut conn, rtbin_name.clone()).await?;
 
     let reupload_rt = rt_metadata.is_none();
-    
+
     if reupload_rt {
         let rt_pb = create_upload_progress_bar("Uploading runtime");
         let rt_pb_clone = rt_pb.clone();
