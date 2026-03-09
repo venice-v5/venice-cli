@@ -2,33 +2,28 @@ use std::time::Duration;
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, stdin, stdout},
+    select,
     time::sleep,
 };
 use vex_v5_serial::{Connection, serial::SerialConnection};
 
 use crate::errors::CliError;
 
-// actual return type should be Result<!, CliError>, but never (!) type is unstable
-pub async fn terminal(conn: &mut SerialConnection) -> Result<(), CliError> {
+pub async fn terminal(connection: &mut SerialConnection) -> Result<(), CliError> {
     let mut stdin = stdin();
-    let mut stdout = stdout();
-
-    let mut input_buf = [0; 1024];
-    let mut output_buf = [0; 1024];
+    let mut program_output = [0; 2048];
+    let mut program_input = [0; 4096];
 
     loop {
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
-                return Ok(());
-            }
-            input_size = stdin.read(&mut input_buf) => {
-                if let Ok(size) = input_size {
-                    conn.write_user(&input_buf[..size]).await?;
+        select! {
+            read = connection.read_user(&mut program_output) => {
+                if let Ok(size) = read {
+                    stdout().write_all(&program_output[..size]).await.unwrap();
                 }
-            }
-            output_size = conn.read_user(&mut output_buf) => {
-                if let Ok(size) = output_size {
-                    stdout.write_all(&output_buf[..size]).await?;
+            },
+            read = stdin.read(&mut program_input) => {
+                if let Ok(size) = read {
+                    connection.write_user(&program_input[..size]).await.unwrap();
                 }
             }
         }
