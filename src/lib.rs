@@ -14,11 +14,14 @@ use clap::Parser;
 use pyo3::prelude::*;
 use tokio::runtime::Runtime;
 
-use std::{path::PathBuf, sync::OnceLock};
+use std::{
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 
 use build::build;
 use errors::CliError;
-use manifest::{find_manifest, parse_manifest, prompt_for_slot, update_missing_config};
+use manifest::{get_project, prompt_for_slot, resolve_project_dir, update_missing_config, MANIFEST_NAME};
 use runtime::RuntimeSource;
 use terminal::terminal;
 use upload::{open_connection, upload};
@@ -72,25 +75,18 @@ enum Subcommand {
     },
 }
 
-fn clean(dir: Option<PathBuf>) -> miette::Result<()> {
-    let manifest_dir = match dir {
-        Some(dir) => dir,
-        None => find_manifest(None)?.parent().unwrap().to_path_buf(),
-    };
-
-    std::fs::remove_dir_all(manifest_dir.join(BUILD_DIR)).map_err(CliError::Io)?;
+fn clean() -> miette::Result<()> {
+    std::fs::remove_dir_all(project_dir()?.join(BUILD_DIR)).map_err(CliError::Io)?;
 
     Ok(())
 }
 
-async fn ensure_project_config(dir: Option<PathBuf>) -> Result<(PathBuf, PathBuf), CliError> {
-    let manifest_path = find_manifest(dir.as_deref())?;
-    let project_dir = dir
-        .as_deref()
-        .unwrap_or_else(|| manifest_path.parent().unwrap());
+async fn ensure_project_config() -> Result<(PathBuf, PathBuf), CliError> {
+    let project_dir = project_dir()?;
+    let manifest_path = project_dir.join(MANIFEST_NAME);
 
     // Parse current manifest
-    let project = parse_manifest(&manifest_path).await?;
+    let project = get_project().await?;
 
     let mut needs_update = false;
     let mut slot_to_add = None;
@@ -109,7 +105,15 @@ async fn ensure_project_config(dir: Option<PathBuf>) -> Result<(PathBuf, PathBuf
     Ok((manifest_path.to_path_buf(), project_dir.to_path_buf()))
 }
 
+static PROJECT_DIR: OnceLock<PathBuf> = OnceLock::new();
 static MPY_CROSS_PATH: OnceLock<String> = OnceLock::new();
+
+pub fn project_dir() -> Result<&'static Path, CliError> {
+    PROJECT_DIR
+        .get()
+        .map(PathBuf::as_path)
+        .ok_or(CliError::NoManifest)
+}
 
 #[pyfunction]
 #[pyo3(signature = (args, binary_path, version, mpy_cross))]
@@ -132,6 +136,14 @@ fn call(
                 err.exit();
             }
         };
+
+        let start_dir = match cmd.dir.clone() {
+            Some(dir) => dir,
+            None => std::env::current_dir().map_err(CliError::Io)?,
+        };
+        if let Ok(project_dir) = resolve_project_dir(&start_dir) {
+            PROJECT_DIR.set(project_dir).unwrap();
+        }
 
         // Determine the runtime source
         #[cfg(debug_assertions)]
@@ -159,22 +171,20 @@ fn call(
                 None
             };
 
-        let dir = cmd.dir;
         match cmd.subcmd {
             Subcommand::Build => {
-                let _ = ensure_project_config(dir.clone()).await?;
-                let _ = build(dir).await?;
+                let _ = ensure_project_config().await?;
+                let _ = build().await?;
             }
-            Subcommand::Clean => clean(dir)?,
+            Subcommand::Clean => clean()?,
             Subcommand::Upload { after_upload, cold } => {
-                let _ = ensure_project_config(dir.clone()).await?;
-                let _ = upload(dir, after_upload.map(|a| a.into()), runtime_source, cold).await?;
+                let _ = ensure_project_config().await?;
+                let _ = upload(after_upload.map(|a| a.into()), runtime_source, cold).await?;
             }
             Subcommand::Terminal => terminal(&mut open_connection().await?).await?,
             Subcommand::Run { cold } => {
-                let _ = ensure_project_config(dir.clone()).await?;
-                let mut conn =
-                    upload(dir, Some(FileExitAction::RunProgram), runtime_source, cold).await?;
+                let _ = ensure_project_config().await?;
+                let mut conn = upload(Some(FileExitAction::RunProgram), runtime_source, cold).await?;
                 terminal(&mut conn).await?;
             }
         };

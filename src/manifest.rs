@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use inquire::{CustomType};
+use inquire::CustomType;
 use inquire::validator::Validation;
 use serde::Deserialize;
 
-use crate::errors::CliError;
+use crate::{errors::CliError, project_dir};
 
 pub const MANIFEST_NAME: &str = "pyproject.toml";
 
@@ -32,7 +32,6 @@ pub struct Tool {
 #[derive(Deserialize, Debug)]
 pub struct VeniceConfig {
     pub slot: Option<u8>,
-    pub entrypoint: Option<PathBuf>,
     pub name: Option<String>,
     pub description: Option<String>,
     #[serde(default)]
@@ -82,23 +81,13 @@ pub enum ProgramIcon {
     VexcodeCpp = 926,
 }
 
-pub fn find_manifest(dir: Option<&Path>) -> Result<PathBuf, CliError> {
-    if let Some(dir) = dir {
-        let manifest_path = dir.join(MANIFEST_NAME);
-        return if std::fs::exists(&manifest_path).map_err(CliError::Io)? {
-            Ok(manifest_path)
-        } else {
-            Err(CliError::NoManifest)
-        };
-    }
-
-    let current_dir = std::env::current_dir().map_err(CliError::Io)?;
-    let mut search_dir = current_dir.clone();
+pub fn resolve_project_dir(start_dir: &Path) -> Result<PathBuf, CliError> {
+    let mut search_dir = start_dir.to_path_buf();
 
     loop {
         let manifest_path = search_dir.join(MANIFEST_NAME);
         if std::fs::exists(&manifest_path).map_err(CliError::Io)? {
-            return Ok(manifest_path);
+            return Ok(search_dir);
         }
 
         if !search_dir.pop() {
@@ -107,16 +96,13 @@ pub fn find_manifest(dir: Option<&Path>) -> Result<PathBuf, CliError> {
     }
 }
 
-pub async fn parse_manifest(path: &Path) -> Result<Project, CliError> {
-    let file_string = tokio::fs::read_to_string(path).await?;
+pub async fn get_project() -> Result<Project, CliError> {
+    let manifest_path = project_dir()?.join(MANIFEST_NAME);
+    let file_string = tokio::fs::read_to_string(manifest_path).await?;
     let pyproject: PyProjectToml = toml::from_str(&file_string).map_err(CliError::Manifest)?;
 
-    // Get [tool.venice] section if it exists
-    let venice_config = pyproject
-        .tool
-        .and_then(|t| t.venice);
+    let venice_config = pyproject.tool.and_then(|t| t.venice);
 
-    // Merge names: [tool.venice].name overrides [project].name
     let project_name = pyproject.project.as_ref().and_then(|p| p.name.clone());
     let name = venice_config
         .as_ref()
@@ -124,8 +110,10 @@ pub async fn parse_manifest(path: &Path) -> Result<Project, CliError> {
         .or(project_name)
         .ok_or(CliError::NoProjectName)?;
 
-    // Merge descriptions: [tool.venice].description overrides [project].description
-    let project_description = pyproject.project.as_ref().and_then(|p| p.description.clone());
+    let project_description = pyproject
+        .project
+        .as_ref()
+        .and_then(|p| p.description.clone());
     let description = venice_config
         .as_ref()
         .and_then(|v| v.description.clone())
@@ -139,60 +127,6 @@ pub async fn parse_manifest(path: &Path) -> Result<Project, CliError> {
     })
 }
 
-/// Resolve the actual Python file from an entrypoint directory.
-/// Looks for main.py first, then __init__.py.
-/// For subdirectories (during recursive compilation), only __init__.py is used.
-pub fn resolve_entrypoint(entrypoint: &Path, is_root: bool) -> Result<PathBuf, CliError> {
-    if is_root {
-        // For root entrypoint, check main.py first
-        let main_py = entrypoint.join("main.py");
-        if main_py.exists() {
-            return Ok(main_py);
-        }
-    }
-
-    // Fall back to __init__.py
-    let init_py = entrypoint.join("__init__.py");
-    if init_py.exists() {
-        return Ok(init_py);
-    }
-
-    Err(CliError::NoEntrypoint(entrypoint.to_path_buf()))
-}
-
-/// Find all main.py files in a directory tree and return them sorted by path depth (shortest first)
-pub fn find_main_py_files(dir: &Path) -> Result<Vec<PathBuf>, CliError> {
-    let mut main_files = Vec::new();
-    find_main_py_recursive(dir, &mut main_files)?;
-
-    // Sort by path component count (shortest paths first)
-    main_files.sort_by_key(|p| p.components().count());
-
-    Ok(main_files)
-}
-
-fn find_main_py_recursive(dir: &Path, results: &mut Vec<PathBuf>) -> Result<(), CliError> {
-    let entries = std::fs::read_dir(dir).map_err(CliError::Io)?;
-
-    for entry in entries {
-        let entry = entry.map_err(CliError::Io)?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            // Skip hidden directories and common non-source directories
-            let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if !dir_name.starts_with('.') && dir_name != "__pycache__" && dir_name != "node_modules" && dir_name != ".venv" && dir_name != "venv" {
-                find_main_py_recursive(&path, results)?;
-            }
-        } else if path.file_name().and_then(|n| n.to_str()) == Some("main.py") {
-            results.push(path);
-        }
-    }
-
-    Ok(())
-}
-
-/// Prompt user for slot number with explanation
 pub fn prompt_for_slot() -> Result<u8, CliError> {
     println!("\nYou haven't yet configured a slot for your program in pyproject.toml.");
     let slot = CustomType::<u8>::new("Choose a slot for your program (1-8):")
@@ -201,7 +135,9 @@ pub fn prompt_for_slot() -> Result<u8, CliError> {
                 Ok(Validation::Valid)
             } else {
                 // Inquire handles the pretty printing of this error message
-                Ok(Validation::Invalid("❌ Slot must be between 1 and 8".into()))
+                Ok(Validation::Invalid(
+                    "❌ Slot must be between 1 and 8".into(),
+                ))
             }
         })
         .with_error_message("Please enter a valid number")
@@ -212,18 +148,20 @@ pub fn prompt_for_slot() -> Result<u8, CliError> {
     Ok(slot)
 }
 
-/// Update pyproject.toml with missing slot and/or entrypoint
+/// update pyproject.toml with missing slot
 pub async fn update_missing_config(manifest_path: &Path, slot: Option<u8>) -> Result<(), CliError> {
     if slot.is_none() {
         return Ok(()); // Nothing to update
     }
 
     // Read existing pyproject.toml
-    let content = tokio::fs::read_to_string(manifest_path).await.map_err(CliError::Io)?;
+    let content = tokio::fs::read_to_string(manifest_path)
+        .await
+        .map_err(CliError::Io)?;
     // Parse with toml_edit and convert any errors to our error type
-    let mut doc = content.parse::<toml_edit::DocumentMut>().map_err(|e| {
-        CliError::ManifestEdit(e.to_string())
-    })?;
+    let mut doc = content
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| CliError::ManifestEdit(e.to_string()))?;
 
     // Ensure [tool] exists
     if !doc.contains_key("tool") {
@@ -249,6 +187,8 @@ pub async fn update_missing_config(manifest_path: &Path, slot: Option<u8>) -> Re
     }
 
     // Write back
-    tokio::fs::write(manifest_path, doc.to_string()).await.map_err(CliError::Io)?;
+    tokio::fs::write(manifest_path, doc.to_string())
+        .await
+        .map_err(CliError::Io)?;
     Ok(())
 }

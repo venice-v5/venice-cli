@@ -1,5 +1,5 @@
 use std::io::Write;
-use std::{path::PathBuf, time::Duration};
+use std::time::Duration;
 
 use flate2::{Compression, GzBuilder};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -24,7 +24,7 @@ use vex_v5_serial::{
 use crate::{
     build::build,
     errors::CliError,
-    manifest::{find_manifest, parse_manifest},
+    manifest::get_project,
     runtime::{RuntimeSource, VPT_LOAD_ADDR},
 };
 
@@ -103,10 +103,9 @@ fn create_upload_progress_bar(message: &str) -> ProgressBar {
 // the logic was correct.
 // I believe you -- aadish 2025-08-23
 pub async fn upload(
-    dir: Option<PathBuf>,
     after_upload: Option<FileExitAction>,
     runtime_source: Option<RuntimeSource>,
-    force_reupload_runtime: bool,
+    _force_reupload_runtime: bool,
 ) -> Result<SerialConnection, CliError> {
     let bin_string = FixedString::new(String::from("bin")).unwrap();
 
@@ -114,8 +113,7 @@ pub async fn upload(
     let conn_task = tokio::spawn(open_connection());
 
     // read and parse manifest
-    let manifest_path = find_manifest(dir.as_deref())?;
-    let manifest = parse_manifest(&manifest_path).await?;
+    let manifest = get_project().await?;
 
     if let Some(slot) = manifest.slot {
         if !(1..=8).contains(&slot) {
@@ -209,7 +207,7 @@ pub async fn upload(
         rt_pb.finish_with_message("Uploading runtime - done");
     }
 
-    let vpt = build(dir).await?;
+    let vpt = build().await?;
 
     let vpt_pb = create_upload_progress_bar("Uploading VPT");
     let vpt_pb_clone = vpt_pb.clone();

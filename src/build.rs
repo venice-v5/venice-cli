@@ -8,7 +8,7 @@ use std::{
 use venice_program_table::{ProgramBuilder, ProgramFlags, VptBuilder};
 
 use crate::{
-    BUILD_DIR, MPY_CROSS_PATH, TABLE_FILE, VENDOR_ID, errors::CliError, manifest::{find_manifest, parse_manifest}
+    BUILD_DIR, MPY_CROSS_PATH, TABLE_FILE, VENDOR_ID, errors::CliError, project_dir,
 };
 
 pub const SRC_EXT: &str = "py";
@@ -163,12 +163,8 @@ pub async fn build_modules(
     Ok(())
 }
 
-pub async fn build(dir: Option<PathBuf>) -> Result<Vec<u8>, CliError> {
-    let manifest_path = find_manifest(dir.as_deref())?;
-    let manifest = parse_manifest(&manifest_path).await?;
-    let manifest_dir = dir
-        .as_deref()
-        .unwrap_or_else(|| manifest_path.parent().unwrap());
+pub async fn build() -> Result<Vec<u8>, CliError> {
+    let manifest_dir = project_dir()?;
 
     let src_dir = manifest_dir;
     let build_dir = manifest_dir.join(BUILD_DIR);
