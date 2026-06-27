@@ -14,7 +14,7 @@ clap = { version = "4.5.40", features = ["derive"] }
 miette = { version = "7.6.0", features = ["fancy"] }
 tokio = { version = "1.47.1", features = ["full"] }
 semver = "1.0.26"
-vex-v5-serial = {version = "0.5.1", default-features = false, features = [
+vex-v5-serial = {version = "0.5.2", default-features = false, features = [
     "serial",
 ]}
 indicatif = "0.18.2"

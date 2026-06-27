@@ -1,5 +1,6 @@
 To compile the CLI, run:
 ```
-source .venv/bin/activate
+nix develop
 maturin develop
+uv run venice
 ```
