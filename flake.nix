@@ -8,7 +8,6 @@
 
   outputs =
     {
-      self,
       nixpkgs,
       flake-utils,
     }:
@@ -27,6 +26,8 @@
           ];
 
           shellHook = ''
+            export RUST_SRC_PATH="${pkgs.rustPlatform.rustLibSrc}"
+
             rm -rf .venv || true
             uv venv -p=3.13 .venv
 

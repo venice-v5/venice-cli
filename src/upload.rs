@@ -1,7 +1,5 @@
-use std::io::Write;
 use std::time::Duration;
 
-use flate2::{Compression, GzBuilder};
 use indicatif::{ProgressBar, ProgressStyle};
 use tokio::task::spawn_blocking;
 use vex_v5_serial::{
@@ -39,12 +37,6 @@ pub async fn open_connection() -> Result<SerialConnection, CliError> {
     })
     .await
     .unwrap()
-}
-
-fn gzip_compress(data: &mut Vec<u8>) {
-    let mut encoder = GzBuilder::new().write(Vec::new(), Compression::best());
-    encoder.write_all(data).unwrap();
-    *data = encoder.finish().unwrap();
 }
 
 /// # Errors
@@ -126,9 +118,7 @@ pub async fn upload(
     // Get the runtime source or error if none provided
     let runtime_source = runtime_source.ok_or(CliError::NoRuntimeSource)?;
     let rtbin = runtime_source.as_rtbin();
-    let mut runtime_contents = runtime_source.read_binary().await?;
-    // <https://media1.tenor.com/m/cjSTJh8J3QcAAAAd/cat-cat-sink.gif>
-    gzip_compress(&mut runtime_contents);
+    let runtime_contents = runtime_source.read_binary().await?;
 
     let config = ini_config(
         &manifest.name,

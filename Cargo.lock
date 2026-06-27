@@ -1231,7 +1231,6 @@ name = "venice-cli-core"
 version = "0.1.0"
 dependencies = [
  "clap",
- "flate2",
  "indicatif",
  "inquire",
  "miette",
