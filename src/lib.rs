@@ -6,6 +6,7 @@ pub const TABLE_FILE: &str = "out.vpt";
 pub mod build;
 pub mod errors;
 pub mod manifest;
+pub mod new;
 pub mod runtime;
 pub mod terminal;
 pub mod upload;
@@ -22,6 +23,7 @@ use std::{
 use build::build;
 use errors::CliError;
 use manifest::{get_project, prompt_for_slot, resolve_project_dir, update_missing_config, MANIFEST_NAME};
+use new::new;
 use runtime::RuntimeSource;
 use terminal::terminal;
 use upload::{open_connection, upload};
@@ -62,6 +64,13 @@ struct Venice {
 
 #[derive(Clone, clap::Subcommand)]
 enum Subcommand {
+    New {
+        name: String,
+        #[arg(long)]
+        venice_wheel: Option<PathBuf>,
+        #[arg(long)]
+        cli_wheel: Option<PathBuf>,
+    },
     Build,
     Clean,
     Upload {
@@ -107,6 +116,7 @@ async fn ensure_project_config() -> Result<(PathBuf, PathBuf), CliError> {
 
 static PROJECT_DIR: OnceLock<PathBuf> = OnceLock::new();
 static MPY_CROSS_PATH: OnceLock<String> = OnceLock::new();
+static UV_PATH: OnceLock<String> = OnceLock::new();
 
 pub fn project_dir() -> Result<&'static Path, CliError> {
     PROJECT_DIR
@@ -115,19 +125,30 @@ pub fn project_dir() -> Result<&'static Path, CliError> {
         .ok_or(CliError::NoManifest)
 }
 
+pub fn uv_path() -> Result<&'static str, CliError> {
+    UV_PATH
+        .get()
+        .map(String::as_str)
+        .ok_or(CliError::NoUv)
+}
+
 #[pyfunction]
-#[pyo3(signature = (args, binary_path, version, mpy_cross))]
+#[pyo3(signature = (args, binary_path, version, mpy_cross, uv_path=None))]
 fn call(
     args: Vec<String>,
     binary_path: Option<String>,
     version: Option<String>,
     mpy_cross: Option<String>,
+    uv_path: Option<String>,
 ) -> PyResult<()> {
     let rt = Runtime::new().unwrap();
     let result: miette::Result<()> = rt.block_on(async {
         MPY_CROSS_PATH
             .set(mpy_cross.unwrap_or_else(|| "mpy-cross".to_string()))
             .unwrap();
+        if let Some(path) = uv_path {
+            UV_PATH.set(path).unwrap();
+        }
 
         let cmd = Venice::try_parse_from(args);
         let cmd = match cmd {
@@ -172,6 +193,9 @@ fn call(
             };
 
         match cmd.subcmd {
+            Subcommand::New { name, venice_wheel, cli_wheel } => {
+                new(&name, venice_wheel.as_deref(), cli_wheel.as_deref())?;
+            }
             Subcommand::Build => {
                 let _ = ensure_project_config().await?;
                 let _ = build().await?;

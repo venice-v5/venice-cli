@@ -51,4 +51,13 @@ pub enum CliError {
 
     #[error("no runtime source provided - ensure the 'venice' package is installed")]
     NoRuntimeSource,
+
+    #[error("uv not found - ensure the 'uv' package is installed in the same environment as venice-cli")]
+    NoUv,
+
+    #[error("directory `{0}` already exists")]
+    ProjectExists(PathBuf),
+
+    #[error("uv exited with status {status}:\n{stderr}")]
+    UvFailed { status: i32, stderr: String },
 }

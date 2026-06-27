@@ -13,7 +13,14 @@ def main():
     except (ImportError, AttributeError):
         pass
 
-    call(sys.argv, str(binary_path), version, mpy_cross.mpy_cross)
+    uv_path = None
+    try:
+        import uv  # pyright: ignore[reportMissingImports]
+        uv_path = uv.find_uv_bin()
+    except (ImportError, AttributeError):
+        pass
+
+    call(sys.argv, str(binary_path), version, mpy_cross.mpy_cross, uv_path)
 
 
 if __name__ == "__main__":

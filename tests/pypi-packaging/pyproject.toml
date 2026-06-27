@@ -1,9 +1,0 @@
-[project]
-name = "pypi-packaging"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.11"
-dependencies = [
-    "simple-math-package>=0.0.2",
-]
