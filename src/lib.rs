@@ -80,6 +80,7 @@ enum Subcommand {
     },
     Terminal,
     Run {
+        #[arg(long, short, action = clap::ArgAction::SetTrue)]
         cold: bool,
     },
 }
