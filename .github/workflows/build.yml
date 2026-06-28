@@ -5,64 +5,47 @@ on: [push]
 permissions:
   contents: read
 jobs:
-  # linux:
-  #     runs-on: ${{ matrix.platform.runner }}
-  #     strategy:
-  #       matrix:
-  #         platform:
-  #           - runner: ubuntu-22.04
-  #             target: x86_64
-  #           - runner: ubuntu-22.04
-  #             target: x86
-  #           - runner: ubuntu-22.04
-  #             target: aarch64
-  #           - runner: ubuntu-22.04
-  #             target: armv7
-  #           - runner: ubuntu-22.04
-  #             target: s390x
-  #           - runner: ubuntu-22.04
-  #             target: ppc64le
-  #     steps:
-  #       - uses: actions/checkout@v4
-
-  #       - name: Set up QEMU
-  #         uses: docker/setup-qemu-action@v3
-
-  #       - uses: actions/setup-python@v5
-  #         with:
-  #           python-version: "3.12" # 👈 FIXED: Pin to 3.12 to avoid Python 3.14 alpha issues
-
-  #       - name: Build wheels
-  #         uses: PyO3/maturin-action@v1
-  #         env:
-  #           PKG_CONFIG_ALLOW_CROSS: 1
-  #           PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
-  #         with:
-  #           target: ${{ matrix.platform.target }}
-  #           # 👈 FIXED: Added '--env PKG_CONFIG_ALLOW_CROSS' to args
-  #           # This forces maturin to pass the variable from the Runner into the Docker Container
-  #           args: --release --out dist --find-interpreter
-  #           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-  #           manylinux: auto
-  #           before-script-linux: |
-  #             # Install required headers (keep this, it is correct)
-  #             if command -v apt-get &> /dev/null; then
-  #               apt-get update && apt-get install -y libdbus-1-dev pkg-config libudev-dev
-  #             elif command -v yum &> /dev/null; then
-  #               yum check-update || true
-  #               yum install -y dbus-devel pkgconfig libudev-devel systemd-devel
-  #             elif command -v dnf &> /dev/null; then
-  #               dnf install -y dbus-devel pkgconfig libudev-devel systemd-devel
-  #             else
-  #               echo "Could not detect package manager"
-  #               exit 1
-  #             fi
-
-  #       - name: Upload wheels
-  #         uses: actions/upload-artifact@v4
-  #         with:
-  #           name: wheels-linux-${{ matrix.platform.target }}
-  #           path: dist
+  linux:
+      runs-on: ${{ matrix.platform.runner }}
+      strategy:
+        matrix:
+          platform:
+            - runner: ubuntu-22.04
+              target: x86_64
+            - runner: ubuntu-22.04
+              target: x86
+            - runner: ubuntu-22.04
+              target: aarch64
+            - runner: ubuntu-22.04
+              target: armv7
+            - runner: ubuntu-22.04
+              target: s390x
+            - runner: ubuntu-22.04
+              target: ppc64le
+      steps:
+        - uses: actions/checkout@v4
+        - name: Set up QEMU
+          uses: docker/setup-qemu-action@v3
+        - uses: actions/setup-python@v5
+          with:
+            python-version: 3.x
+        - name: Build wheels
+          uses: PyO3/maturin-action@v1
+          env:
+            PKG_CONFIG_ALLOW_CROSS: 1
+            PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
+          with:
+            target: ${{ matrix.platform.target }}
+            args: --release --out dist --find-interpreter
+            sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+            manylinux: auto
+            before-script-linux: |
+              apt-get update && apt-get install -y libdbus-1-dev pkg-config libudev-dev
+        - name: Upload wheels
+          uses: actions/upload-artifact@v4
+          with:
+            name: wheels-linux-${{ matrix.platform.target }}
+            path: dist
 
   # musllinux:
   #   runs-on: ${{ matrix.platform.runner }}
@@ -141,40 +124,6 @@ jobs:
   #       with:
   #         name: wheels-windows-${{ matrix.platform.target }}
   #         path: dist
-
-  linux:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        env:
-          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
-        with:
-          target: x86_64
-          args: --release --out dist --find-interpreter
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          manylinux: auto
-          before-script-linux: |
-            if command -v apt-get &> /dev/null; then
-              apt-get update && apt-get install -y libdbus-1-dev pkg-config libudev-dev
-            elif command -v yum &> /dev/null; then
-              yum check-update || true
-              yum install -y dbus-devel pkgconfig libudev-devel systemd-devel
-            elif command -v dnf &> /dev/null; then
-              dnf install -y dbus-devel pkgconfig libudev-devel systemd-devel
-            else
-              echo "Could not detect package manager"
-              exit 1
-            fi
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-linux-x86_64
-          path: dist
 
   macos:
     runs-on: ${{ matrix.platform.runner }}
