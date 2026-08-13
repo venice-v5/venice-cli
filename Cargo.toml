@@ -27,5 +27,5 @@ inquire = "0.9.1"
 
 [dependencies.venice-program-table]
 git = "https://github.com/venice-v5/venice-program-table"
-rev = "ec40504b24b0adcf3b15c06e7fd403fdcdfd71c8"
+rev = "0f0186eb6ac16c0e25e34ca7eb539fd23c9b4615"
 features = ["builder"]
