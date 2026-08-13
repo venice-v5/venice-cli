@@ -97,7 +97,7 @@ fn create_upload_progress_bar(message: &str) -> ProgressBar {
 pub async fn upload(
     after_upload: Option<FileExitAction>,
     runtime_source: Option<RuntimeSource>,
-    _force_reupload_runtime: bool,
+    force_reupload_runtime: bool,
 ) -> Result<SerialConnection, CliError> {
     let bin_string = FixedString::new(String::from("bin")).unwrap();
 
@@ -164,7 +164,7 @@ pub async fn upload(
     let rtbin_name = FixedString::new(format!("{rtbin}")).unwrap();
     let rt_metadata = brain_file_metadata(&mut conn, rtbin_name.clone()).await?;
 
-    let reupload_rt = rt_metadata.is_none();
+    let reupload_rt = force_reupload_runtime || rt_metadata.is_none();
 
     if reupload_rt {
         let rt_pb = create_upload_progress_bar("Uploading runtime");
